@@ -88,19 +88,18 @@
         let tempImgBase64 = "";
         let isAdmin = false;
 
+        // 【移植】原代码的关系样式定义
         const REL_STYLE = {
-            'cp': { color: '#D81B60', width: 0.8 },
-            '好友': { color: '#2E7D32', width: 0.8 },
-            '队友': { color: '#1565C0', width: 0.8 },
-            '室友': { color: '#E65100', width: 0.8 },
-            'becp': { color: '#4A148C', width: 0.8 },
-            '仇人': { color: '#C62828', width: 0.8 }
+            'cp': { color: '#B3005F', width: 0.8 },
+            '好友': { color: '#006400', width: 0.8 },
+            '队友': { color: '#005F6B', width: 0.8 },
+            '室友': { color: '#A0522D', width: 0.8 },
+            'becp': { color: '#310062', width: 0.8 },
+            '仇人': { color: '#800000', width: 0.8 }
         };
 
-        // 初始化 Graph 对象
         const Graph = ForceGraph3D()(document.getElementById('3d-graph'));
 
-        // 配置渲染参数
         Graph.backgroundColor('#f0f8ff')
             .showNavInfo(false)
             .nodeThreeObject(node => {
@@ -122,6 +121,7 @@
                 group.add(sprite);
                 return group;
             })
+            // 【移植】原代码的连线曲率设置
             .linkCurvature(link => {
                 const idA = link.source.id || link.source;
                 const idB = link.target.id || link.target;
@@ -131,8 +131,9 @@
                 });
                 return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
             })
-            .linkColor(link => REL_STYLE[link.type]?.color || '#333')
-            .linkWidth(1.2)
+            // 【移植】颜色与宽度
+            .linkColor(link => REL_STYLE[link.type]?.color || '#666')
+            .linkWidth(0.8)
             .nodeVisibility(node => {
                 if (!focusNode) return true;
                 return node.id === focusNode.id || gData.links.some(l =>
@@ -149,67 +150,49 @@
             .onNodeClick(node => { focusNode = node; showDetail(node); refreshGraph(); })
             .onLinkClick((link, event) => {
                 const pop = document.getElementById('link-pop');
-                pop.innerHTML = `<b style="color:${REL_STYLE[link.type]?.color || '#333'}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
+                pop.innerHTML = `<b style="color:${REL_STYLE[link.type]?.color || '#666'}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
                 pop.style.display = 'block';
                 pop.style.left = (event.clientX + 20) + 'px'; pop.style.top = (event.clientY + 20) + 'px';
                 setTimeout(() => { pop.style.display = 'none'; }, 4000);
             });
 
-        // 诊断修复版：数据加载函数
         async function loadData() {
             console.log("📡 正在从云端调取数据...");
             const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
-            
             if (error) {
-                console.error("❌ 数据读取失败:", error.message);
                 document.getElementById('sync-text').innerText = "❌ 数据库读取异常";
                 return;
             }
-
             if (data && data.data) {
                 gData = data.data;
-                console.log(`✅ 数据加载成功！节点: ${gData.nodes.length}, 连线: ${gData.links.length}`);
-                
-                // 3. 执行清洗逻辑（第2点的要求）
                 cleanNodePositions(); 
-                
-                // 延迟注入确保 WebGL 准备好
                 setTimeout(() => {
                     Graph.graphData(gData);
-                    console.log("🚀 引擎已启动渲染");
                     document.getElementById('sync-text').innerText = "✅ 数据已对齐";
                 }, 100);
             }
             checkAdmin();
         }
 
-        // 诊断修复版：数据保存函数
         async function saveData() {
             if (!isAdmin) return;
             document.getElementById('sync-text').innerText = "⏳ 同步中...";
-            
-            // 深拷贝并彻底清洗坐标后再存入数据库
             const exportData = JSON.parse(JSON.stringify(gData));
             exportData.nodes.forEach(n => {
                 ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(prop => delete n[prop]);
             });
-            // 确保连线指向的是 ID 字符串
             exportData.links.forEach(l => {
                 if (typeof l.source === 'object') l.source = l.source.id;
                 if (typeof l.target === 'object') l.target = l.target.id;
             });
-
             const { error } = await sb.from('relation_graphs').update({ data: exportData }).eq('id', 1);
-            if(error) console.error("💾 保存失败:", error);
             document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
         }
 
-        // 核心修复：清理节点位置及引用（彻底解决随缘显示问题）
         function cleanNodePositions() {
             gData.nodes.forEach(n => {
                 ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(p => delete n[p]);
             });
-            // 重要：将所有连线还原为 ID 字符串，防止插件报错
             gData.links.forEach(l => {
                 if (typeof l.source === 'object') l.source = l.source.id;
                 if (typeof l.target === 'object') l.target = l.target.id;
@@ -221,7 +204,6 @@
             Graph.graphData(gData);
         }
 
-        // --- 其他交互逻辑保持不变 ---
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
             if (!name) return alert('姓名必填');
@@ -315,9 +297,7 @@
         function closeCard() { document.getElementById('detail-card').style.display = 'none'; resetFocus(); }
         function resetForm() { ['nodeName', 'nodeNick', 'nodeAvatar', 'nodeDesc'].forEach(id => document.getElementById(id).value = ''); tempImgBase64 = ""; }
 
-        // 3. 优化后的启动顺序
         window.onload = loadData;
     </script>
 </body>
 </html>
-
