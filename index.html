@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>3D人物关系档案 - 权限管理版</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
@@ -69,7 +68,6 @@
         </div>
         <div style="margin-top:15px;">
             <button id="editBtn" onclick="editCurrentNode()" style="background:#f0f0f0; color:#444; border:1px solid #ccc; display:none">修改资料</button>
-            <button id="delNodeBtn" onclick="deleteCurrentNode()" style="background:#dc3545; color:white; display:none; margin-top:5px">⚠️ 删除此人及其关系</button>
             <button onclick="resetFocus()" style="background:var(--success); margin-top:5px">恢复完整视图</button>
             <button onclick="closeCard()" style="background:#eee; color:#666; margin-top:5px">关闭</button>
         </div>
@@ -89,35 +87,49 @@
         let isAdmin = false;
 
         const REL_STYLE = {
-            'cp': { color: '#880044', width: 0.8 },
-            '好友': { color: '#004400', width: 0.8 },
-            '队友': { color: '#003344', width: 0.8 },
-            '室友': { color: '#773300', width: 0.8 },
-            'becp': { color: '#220044', width: 0.8 },
-            '仇人': { color: '#660000', width: 0.8 }
+            'cp': { color: '#B3005F' },
+            '好友': { color: '#006400' },
+            '队友': { color: '#005F6B' },
+            '室友': { color: '#A0522D' },
+            'becp': { color: '#310062' },
+            '仇人': { color: '#800000' }
         };
 
         const Graph = ForceGraph3D()(document.getElementById('3d-graph'));
 
-        Graph.graphData(gData)
-            .backgroundColor('#f0f8ff')
+        Graph.backgroundColor('#f0f8ff')
             .showNavInfo(false)
             .nodeThreeObject(node => {
+                // 【修复点 2】动态获取 Three 对象，避免由于 script 加载顺序导致的 undefined
+                const THREE = Graph.renderer().getContext().canvas.ownerDocument.defaultView.THREE || window.THREE;
                 const group = new THREE.Group();
                 const isFocus = focusNode && node.id === focusNode.id;
                 const size = isFocus ? 11 : 7;
+                
                 const texture = new THREE.TextureLoader().load(node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`);
                 const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
                 group.add(sphere);
+
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 canvas.width = 160; canvas.height = 50;
                 ctx.fillStyle = isFocus ? 'rgba(0,123,255,1)' : 'rgba(80,80,80,1)';
-                ctx.roundRect(0, 0, 160, 50, 12); ctx.fill();
+                
+                // 绘制圆角（手动绘制以保证兼容性）
+                const r = 12;
+                ctx.beginPath();
+                ctx.moveTo(r, 0); ctx.lineTo(160-r, 0); ctx.quadraticCurveTo(160, 0, 160, r);
+                ctx.lineTo(160, 50-r); ctx.quadraticCurveTo(160, 50, 160-r, 50);
+                ctx.lineTo(r, 50); ctx.quadraticCurveTo(0, 50, 0, 50-r);
+                ctx.lineTo(0, r); ctx.quadraticCurveTo(0, 0, r, 0);
+                ctx.fill();
+
                 ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
                 ctx.fillText(node.id, 80, 33);
+                
                 const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-                sprite.position.y = size + 8; sprite.scale.set(16, 5, 1);
+                sprite.position.y = size + 8;
+                sprite.scale.set(16, 5, 1);
                 group.add(sprite);
                 return group;
             })
@@ -130,13 +142,8 @@
                 });
                 return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
             })
-            .linkColor(link => REL_STYLE[link.type]?.color || '#333')
+            .linkColor(link => REL_STYLE[link.type]?.color || '#666')
             .linkWidth(0.8)
-            .linkMaterial(link => new THREE.MeshLambertMaterial({ 
-                color: REL_STYLE[link.type]?.color || '#333', 
-                transparent: false, 
-                opacity: 1 
-            }))
             .nodeVisibility(node => {
                 if (!focusNode) return true;
                 return node.id === focusNode.id || gData.links.some(l =>
@@ -150,46 +157,32 @@
                 const tId = link.target.id || link.target;
                 return sId === focusNode.id || tId === focusNode.id;
             })
-            .onNodeClick(node => { focusNode = node; showDetail(node); refreshGraph(); })
+            .onNodeClick(node => { focusNode = node; showDetail(node); Graph.refresh(); })
             .onLinkClick((link, event) => {
                 const pop = document.getElementById('link-pop');
-                pop.innerHTML = `<b style="color:${REL_STYLE[link.type].color}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
+                pop.innerHTML = `<b style="color:${REL_STYLE[link.type]?.color}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
                 pop.style.display = 'block';
                 pop.style.left = (event.clientX + 20) + 'px'; pop.style.top = (event.clientY + 20) + 'px';
                 setTimeout(() => { pop.style.display = 'none'; }, 4000);
             });
 
-        let clickCount = 0;
-        function handleSecretClick() {
-            clickCount++;
-            if (clickCount >= 3) { clickCount = 0; login(); }
-            setTimeout(() => { clickCount = 0; }, 1000);
-        }
-
-        async function login() {
-            const email = prompt("管理员邮箱:"); if (!email) return;
-            const password = prompt("密码:"); if (!password) return;
-            const { error } = await sb.auth.signInWithPassword({ email, password });
-            if (error) alert("验证失败"); else location.reload();
-        }
-
-        async function logout() { await sb.auth.signOut(); location.reload(); }
-
-        async function checkAdmin() {
-            const { data: { user } } = await sb.auth.getUser();
-            if (user) {
-                isAdmin = true;
-                document.getElementById('ui-panel').style.display = 'block';
-                document.getElementById('editBtn').style.display = 'block';
-                document.getElementById('delNodeBtn').style.display = 'block'; // 管理员显示删除按钮
-            }
-        }
-
+        // --- 管理与同步逻辑 ---
         async function loadData() {
             const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
             if (!error && data) {
-                gData = data.data;
-                cleanNodePositions();
+                // 【修复点 3】彻底深度清理数据，防止坐标残留位移
+                gData = JSON.parse(JSON.stringify(data.data)); 
+                gData.nodes.forEach(n => { 
+                    delete n.x; delete n.y; delete n.z; 
+                    delete n.vx; delete n.vy; delete n.vz;
+                    delete n.fx; delete n.fy; delete n.fz;
+                });
+                // 确保连线引用被重置，防止“球线分离”
+                gData.links.forEach(l => {
+                    if (typeof l.source === 'object') l.source = l.source.id;
+                    if (typeof l.target === 'object') l.target = l.target.id;
+                });
+
                 Graph.graphData(gData);
                 document.getElementById('sync-text').innerText = "✅ 数据已对齐";
             }
@@ -199,29 +192,29 @@
         async function saveData() {
             if (!isAdmin) return;
             document.getElementById('sync-text').innerText = "⏳ 同步中...";
-            const cleanData = JSON.parse(JSON.stringify(gData));
-            cleanData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
-            });
-            const { error } = await sb.from('relation_graphs').update({ data: cleanData }).eq('id', 1);
+            const { error } = await sb.from('relation_graphs').update({ data: gData }).eq('id', 1);
             document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
         }
 
-        function cleanNodePositions() {
-            gData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
-            });
+        let clickCount = 0;
+        function handleSecretClick() {
+            clickCount++;
+            if (clickCount >= 3) { clickCount = 0; login(); }
+            setTimeout(() => { clickCount = 0; }, 1000);
+        }
+        async function login() {
+            const email = prompt("管理员邮箱:"); if (!email) return;
+            const password = prompt("密码:"); if (!password) return;
+            const { error } = await sb.auth.signInWithPassword({ email, password });
+            if (error) alert("验证失败"); else location.reload();
+        }
+        async function logout() { await sb.auth.signOut(); location.reload(); }
+        async function checkAdmin() {
+            const { data: { user } } = await sb.auth.getUser();
+            if (user) { isAdmin = true; document.getElementById('ui-panel').style.display = 'block'; document.getElementById('editBtn').style.display = 'block'; }
         }
 
-        function refreshGraph() {
-            cleanNodePositions();
-            Graph.graphData(gData);
-        }
-
+        // --- 业务功能 ---
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
             if (!name) return alert('姓名必填');
@@ -231,32 +224,8 @@
             let node = gData.nodes.find(n => n.id === name);
             if (node) Object.assign(node, { avatar, nicks, desc });
             else gData.nodes.push({ id: name, avatar, nicks, desc });
-            refreshGraph(); 
-            saveData(); 
-            resetForm();
+            Graph.graphData(gData); saveData(); resetForm();
         }
-
-        // 新增：一键删除人物功能
-        function deleteCurrentNode() {
-            if (!focusNode) return;
-            if (confirm(`确定要删除人物【${focusNode.id}】吗？\n这将同时删除所有与之相关的关系连线！此操作不可撤销。`)) {
-                const targetId = focusNode.id;
-                // 1. 删除节点
-                gData.nodes = gData.nodes.filter(n => n.id !== targetId);
-                // 2. 删除所有相关连线
-                gData.links = gData.links.filter(l => {
-                    const s = l.source.id || l.source;
-                    const t = l.target.id || l.target;
-                    return s !== targetId && t !== targetId;
-                });
-                
-                closeCard(); // 关闭详情页
-                refreshGraph(); // 刷新图形
-                saveData(); // 保存到云端
-                alert("已成功删除该人物及其所有关系。");
-            }
-        }
-
         function addLink() {
             const s = document.getElementById('source').value.trim();
             const t = document.getElementById('target').value.trim();
@@ -264,16 +233,13 @@
             const desc = document.getElementById('relDesc').value.trim();
             if (!gData.nodes.some(n => n.id === s) || !gData.nodes.some(n => n.id === t)) return alert("成员未录入");
             gData.links.push({ source: s, target: t, type, desc });
-            refreshGraph(); 
-            saveData();
+            Graph.graphData(gData); saveData();
         }
-
         function handleSearch(val) {
             if (!val) { resetFocus(); return; }
             const n = gData.nodes.find(n => n.id.includes(val) || (n.nicks && n.nicks.some(nick => nick.includes(val))));
-            if (n) { focusNode = n; showDetail(n); refreshGraph(); }
+            if (n) { focusNode = n; showDetail(n); Graph.refresh(); }
         }
-
         function showDetail(node) {
             document.getElementById('c-avatar').src = node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`;
             document.getElementById('c-name').innerText = node.id;
@@ -283,33 +249,24 @@
             document.getElementById('c-rel-body').innerHTML = myLinks.map(l => {
                 const other = (l.source.id || l.source) === node.id ? (l.target.id || l.target) : (l.source.id || l.source);
                 const delBtn = isAdmin ? `<td><span style="color:red;cursor:pointer" onclick="deleteLinkByIndex(${gData.links.indexOf(l)})">删除</span></td>` : '';
-                return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type].color}"><b>${l.type}</b></td>${delBtn}</tr>`;
+                return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type]?.color || '#666'}"><b>${l.type}</b></td>${delBtn}</tr>`;
             }).join('');
             document.getElementById('detail-card').style.display = 'block';
         }
-
         function deleteLinkByIndex(idx) {
-            if(confirm("确定删除这条关系线？")) {
-                gData.links.splice(idx, 1);
-                refreshGraph(); 
-                saveData();
-                if(focusNode) showDetail(focusNode);
-            }
+            if(confirm("确定删除？")) { gData.links.splice(idx, 1); Graph.graphData(gData); saveData(); if(focusNode) showDetail(focusNode); }
         }
-
         function handleImg(input) {
             const reader = new FileReader();
             reader.onload = (e) => { tempImgBase64 = e.target.result; document.getElementById('nodeAvatar').value = "图片就绪"; };
             reader.readAsDataURL(input.files[0]);
         }
-
         function editCurrentNode() {
             document.getElementById('nodeName').value = focusNode.id;
             document.getElementById('nodeNick').value = (focusNode.nicks || []).join(',');
             document.getElementById('nodeDesc').value = focusNode.desc || '';
         }
-
-        function resetFocus() { focusNode = null; refreshGraph(); }
+        function resetFocus() { focusNode = null; Graph.refresh(); }
         function closeCard() { document.getElementById('detail-card').style.display = 'none'; resetFocus(); }
         function resetForm() { ['nodeName', 'nodeNick', 'nodeAvatar', 'nodeDesc'].forEach(id => document.getElementById(id).value = ''); tempImgBase64 = ""; }
 
