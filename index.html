@@ -3,7 +3,6 @@
 <head>
     <meta charset="UTF-8">
     <title>3D人物关系档案 - 权限管理版</title>
-    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
@@ -87,7 +86,7 @@
         let focusNode = null;
         let tempImgBase64 = "";
         let isAdmin = false;
-        let Graph;
+        let Graph = null;
 
         const REL_STYLE = {
             'cp': { color: '#880044', width: 0.8 },
@@ -98,16 +97,14 @@
             '仇人': { color: '#660000', width: 0.8 }
         };
 
-        // 将初始化逻辑放入 init 函数
         function initGraph() {
-            // 检查 THREE 是否存在，解决你的报错问题
-            if (typeof THREE === 'undefined') {
-                setTimeout(initGraph, 100);
-                return;
-            }
-
-            Graph = ForceGraph3D()(document.getElementById('3d-graph'));
+            // 直接从 ForceGraph3D 内部获取 THREE，防止外部未定义报错
+            const graphContainer = document.getElementById('3d-graph');
+            Graph = ForceGraph3D()(graphContainer);
             
+            // 获取内置的 THREE 对象，这步最关键
+            const THREE = Graph.THREE(); 
+
             Graph.graphData(gData)
                 .backgroundColor('#f0f8ff')
                 .showNavInfo(false)
@@ -118,11 +115,14 @@
                     const texture = new THREE.TextureLoader().load(node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`);
                     const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
                     group.add(sphere);
+                    
                     const canvas = document.createElement('canvas');
                     const ctx = canvas.getContext('2d');
                     canvas.width = 160; canvas.height = 50;
                     ctx.fillStyle = isFocus ? 'rgba(0,123,255,1)' : 'rgba(80,80,80,1)';
-                    ctx.roundRect(0, 0, 160, 50, 12); ctx.fill();
+                    // 兼容旧版浏览器手动绘制圆角
+                    ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(148, 0); ctx.quadraticCurveTo(160, 0, 160, 12); ctx.lineTo(160, 38); ctx.quadraticCurveTo(160, 50, 148, 50); ctx.lineTo(12, 50); ctx.quadraticCurveTo(0, 50, 0, 38); ctx.lineTo(0, 12); ctx.quadraticCurveTo(0, 0, 12, 0); ctx.fill();
+                    
                     ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
                     ctx.fillText(node.id, 80, 33);
                     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
@@ -140,12 +140,6 @@
                     return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
                 })
                 .linkColor(link => REL_STYLE[link.type]?.color || '#333')
-                .linkWidth(0.8)
-                .linkMaterial(link => new THREE.MeshLambertMaterial({ 
-                    color: REL_STYLE[link.type]?.color || '#333', 
-                    transparent: false, 
-                    opacity: 1 
-                }))
                 .nodeVisibility(node => {
                     if (!focusNode) return true;
                     return node.id === focusNode.id || gData.links.some(l =>
@@ -168,24 +162,18 @@
                     setTimeout(() => { pop.style.display = 'none'; }, 4000);
                 });
             
-            loadData(); // 初始化完图形后再加载数据
+            loadData();
         }
 
-        let clickCount = 0;
-        function handleSecretClick() {
-            clickCount++;
-            if (clickCount >= 3) { clickCount = 0; login(); }
-            setTimeout(() => { clickCount = 0; }, 1000);
+        async function loadData() {
+            const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
+            if (!error && data) {
+                gData = data.data;
+                refreshGraph();
+                document.getElementById('sync-text').innerText = "✅ 数据已对齐";
+            }
+            checkAdmin();
         }
-
-        async function login() {
-            const email = prompt("管理员邮箱:"); if (!email) return;
-            const password = prompt("密码:"); if (!password) return;
-            const { error } = await sb.auth.signInWithPassword({ email, password });
-            if (error) alert("验证失败"); else location.reload();
-        }
-
-        async function logout() { await sb.auth.signOut(); location.reload(); }
 
         async function checkAdmin() {
             const { data: { user } } = await sb.auth.getUser();
@@ -195,17 +183,6 @@
                 document.getElementById('editBtn').style.display = 'block';
                 document.getElementById('delNodeBtn').style.display = 'block'; 
             }
-        }
-
-        async function loadData() {
-            const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
-            if (!error && data) {
-                gData = data.data;
-                cleanNodePositions();
-                Graph.graphData(gData);
-                document.getElementById('sync-text').innerText = "✅ 数据已对齐";
-            }
-            checkAdmin();
         }
 
         async function saveData() {
@@ -221,16 +198,12 @@
             document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
         }
 
-        function cleanNodePositions() {
+        function refreshGraph() {
+            if (!Graph) return;
             gData.nodes.forEach(n => {
                 delete n.x; delete n.y; delete n.z;
                 delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
             });
-        }
-
-        function refreshGraph() {
-            cleanNodePositions();
             Graph.graphData(gData);
         }
 
@@ -243,24 +216,16 @@
             let node = gData.nodes.find(n => n.id === name);
             if (node) Object.assign(node, { avatar, nicks, desc });
             else gData.nodes.push({ id: name, avatar, nicks, desc });
-            refreshGraph(); 
-            saveData(); 
-            resetForm();
+            refreshGraph(); saveData(); resetForm();
         }
 
         function deleteCurrentNode() {
             if (!focusNode) return;
-            if (confirm(`确定要彻底删除【${focusNode.id}】吗？所有关系线也会被删除！`)) {
+            if (confirm(`确定要彻底删除【${focusNode.id}】吗？`)) {
                 const targetId = focusNode.id;
                 gData.nodes = gData.nodes.filter(n => n.id !== targetId);
-                gData.links = gData.links.filter(l => {
-                    const s = l.source.id || l.source;
-                    const t = l.target.id || l.target;
-                    return s !== targetId && t !== targetId;
-                });
-                closeCard();
-                refreshGraph();
-                saveData();
+                gData.links = gData.links.filter(l => (l.source.id || l.source) !== targetId && (l.target.id || l.target) !== targetId);
+                closeCard(); refreshGraph(); saveData();
             }
         }
 
@@ -271,8 +236,7 @@
             const desc = document.getElementById('relDesc').value.trim();
             if (!gData.nodes.some(n => n.id === s) || !gData.nodes.some(n => n.id === t)) return alert("成员未录入");
             gData.links.push({ source: s, target: t, type, desc });
-            refreshGraph(); 
-            saveData();
+            refreshGraph(); saveData();
         }
 
         function handleSearch(val) {
@@ -298,30 +262,41 @@
         function deleteLinkByIndex(idx) {
             if(confirm("确定删除这条关系线？")) {
                 gData.links.splice(idx, 1);
-                refreshGraph(); 
-                saveData();
+                refreshGraph(); saveData();
                 if(focusNode) showDetail(focusNode);
             }
         }
 
+        function handleSecretClick() {
+            clickCount++;
+            if (clickCount >= 3) { clickCount = 0; login(); }
+            setTimeout(() => { clickCount = 0; }, 1000);
+        }
+
+        async function login() {
+            const email = prompt("管理员邮箱:"); if (!email) return;
+            const password = prompt("密码:"); if (!password) return;
+            const { error } = await sb.auth.signInWithPassword({ email, password });
+            if (error) alert("验证失败"); else location.reload();
+        }
+
+        async function logout() { await sb.auth.signOut(); location.reload(); }
         function handleImg(input) {
             const reader = new FileReader();
             reader.onload = (e) => { tempImgBase64 = e.target.result; document.getElementById('nodeAvatar').value = "图片就绪"; };
             reader.readAsDataURL(input.files[0]);
         }
-
         function editCurrentNode() {
             document.getElementById('nodeName').value = focusNode.id;
             document.getElementById('nodeNick').value = (focusNode.nicks || []).join(',');
             document.getElementById('nodeDesc').value = focusNode.desc || '';
         }
-
         function resetFocus() { focusNode = null; refreshGraph(); }
         function closeCard() { document.getElementById('detail-card').style.display = 'none'; resetFocus(); }
         function resetForm() { ['nodeName', 'nodeNick', 'nodeAvatar', 'nodeDesc'].forEach(id => document.getElementById(id).value = ''); tempImgBase64 = ""; }
 
-        // 使用 DOMContentLoaded 确保页面资源就绪
-        window.addEventListener('DOMContentLoaded', initGraph);
+        let clickCount = 0;
+        window.onload = initGraph;
     </script>
 </body>
 </html>
