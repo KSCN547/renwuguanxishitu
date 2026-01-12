@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>3D人物关系档案 - 最终完善版</title>
+    <title>3D人物关系档案 - 实体深色版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
@@ -88,14 +88,14 @@
         let tempImgBase64 = "";
         let isAdmin = false;
 
-        // 关系线样式：使用原版深色系配色
+        // 加深颜色数值，确保不透明时色彩足够浓郁
         const REL_STYLE = {
-            'cp': { color: '#B3005F' },
-            '好友': { color: '#006400' },
-            '队友': { color: '#005F6B' },
-            '室友': { color: '#A0522D' },
-            'becp': { color: '#310062' },
-            '仇人': { color: '#800000' }
+            'cp': { color: '#99004d' },
+            '好友': { color: '#005500' },
+            '队友': { color: '#004466' },
+            '室友': { color: '#884400' },
+            'becp': { color: '#2a0055' },
+            '仇人': { color: '#770000' }
         };
 
         const Graph = ForceGraph3D()(document.getElementById('3d-graph'));
@@ -121,7 +121,6 @@
                 group.add(sprite);
                 return group;
             })
-            // 移植原版：处理多重关系的弧度算法
             .linkCurvature(link => {
                 const idA = link.source.id || link.source;
                 const idB = link.target.id || link.target;
@@ -131,19 +130,18 @@
                 });
                 return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
             })
-            // 线条视觉修复：保持0.8线宽，使用不透明材质 + 自发光增强色深
-            .linkColor(link => REL_STYLE[link.type]?.color || '#333333')
+            // --- 关键修改：实体质感线条 ---
             .linkWidth(0.8)
             .linkMaterial(link => {
                 const color = REL_STYLE[link.type]?.color || '#333333';
-                return new THREE.MeshLambertMaterial({
+                return new THREE.MeshBasicMaterial({
                     color: color,
-                    transparent: false, // 禁用透明，解决透光问题
-                    opacity: 1,         // 满不透明度
-                    emissive: color,    // 添加自发光，防止深色在线条太细时变灰
-                    emissiveIntensity: 0.4
+                    transparent: false, // 彻底禁用透明
+                    opacity: 1,         // 强制 100% 不透明
+                    depthWrite: true    // 确保深度写入，不被穿透
                 });
             })
+            // --- 修改结束 ---
             .nodeVisibility(node => {
                 if (!focusNode) return true;
                 return node.id === focusNode.id || gData.links.some(l =>
@@ -166,14 +164,9 @@
                 setTimeout(() => { pop.style.display = 'none'; }, 4000);
             });
 
-        // 数据加载与诊断清洗逻辑
         async function loadData() {
-            console.log("📡 正在调取云端数据...");
             const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
-            if (error) {
-                document.getElementById('sync-text').innerText = "❌ 数据库读取异常";
-                return;
-            }
+            if (error) { document.getElementById('sync-text').innerText = "❌ 数据库读取异常"; return; }
             if (data && data.data) {
                 gData = data.data;
                 cleanNodePositions(); 
@@ -189,7 +182,6 @@
             if (!isAdmin) return;
             document.getElementById('sync-text').innerText = "⏳ 同步中...";
             const exportData = JSON.parse(JSON.stringify(gData));
-            // 彻底清洗坐标引用，确保下次加载重新布局
             exportData.nodes.forEach(n => {
                 ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(prop => delete n[prop]);
             });
@@ -216,7 +208,6 @@
             Graph.graphData(gData);
         }
 
-        // 业务交互逻辑
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
             if (!name) return alert('姓名必填');
@@ -231,7 +222,7 @@
 
         function deleteCurrentNode() {
             if (!focusNode) return;
-            if (confirm(`确定要删除【${focusNode.id}】吗？这将同时删除相关关系线。`)) {
+            if (confirm(`确定要删除【${focusNode.id}】吗？`)) {
                 const targetId = focusNode.id;
                 gData.nodes = gData.nodes.filter(n => n.id !== targetId);
                 gData.links = gData.links.filter(l => (l.source.id || l.source) !== targetId && (l.target.id || l.target) !== targetId);
@@ -244,7 +235,7 @@
             const t = document.getElementById('target').value.trim();
             const type = document.getElementById('relType').value;
             const desc = document.getElementById('relDesc').value.trim();
-            if (!gData.nodes.some(n => n.id === s) || !gData.nodes.some(n => n.id === t)) return alert("角色未录入");
+            if (!gData.nodes.some(n => n.id === s) || !gData.nodes.some(n => n.id === t)) return alert("成员未录入");
             gData.links.push({ source: s, target: t, type, desc });
             refreshGraph(); saveData();
         }
@@ -252,7 +243,7 @@
         function showDetail(node) {
             document.getElementById('c-avatar').src = node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`;
             document.getElementById('c-name').innerText = node.id;
-            document.getElementById('c-desc').innerText = node.desc || '暂无详细背景介绍。';
+            document.getElementById('c-desc').innerText = node.desc || '暂无背景。';
             document.getElementById('c-nicks').innerHTML = (node.nicks || []).map(n => `<span class="tag">#${n}</span>`).join('');
             const myLinks = gData.links.filter(l => (l.source.id || l.source) === node.id || (l.target.id || l.target) === node.id);
             document.getElementById('c-rel-body').innerHTML = myLinks.map(l => {
@@ -264,7 +255,7 @@
         }
 
         function deleteLinkByIndex(idx) {
-            if(confirm("确定彻底删除这段关系？")) {
+            if(confirm("确定删除？")) {
                 gData.links.splice(idx, 1);
                 refreshGraph(); saveData();
                 if(focusNode) showDetail(focusNode);
@@ -273,7 +264,7 @@
 
         function handleImg(input) {
             const reader = new FileReader();
-            reader.onload = (e) => { tempImgBase64 = e.target.result; document.getElementById('nodeAvatar').value = "图片已读取"; };
+            reader.onload = (e) => { tempImgBase64 = e.target.result; document.getElementById('nodeAvatar').value = "图片就绪"; };
             reader.readAsDataURL(input.files[0]);
         }
 
@@ -290,12 +281,10 @@
         function handleSecretClick() {
             window.cnt = (window.cnt || 0) + 1;
             if (window.cnt >= 3) {
-                const email = prompt("管理员邮箱:"); const pw = prompt("密码:");
-                if(email && pw) {
-                    sb.auth.signInWithPassword({ email, password: pw }).then(({error}) => {
-                        if (!error) location.reload(); else alert("验证未通过");
-                    });
-                }
+                const email = prompt("管理邮箱:"); const pw = prompt("密码:");
+                sb.auth.signInWithPassword({ email, password: pw }).then(({error}) => {
+                    if (!error) location.reload(); else alert("验证失败");
+                });
             }
             setTimeout(() => { window.cnt = 0; }, 1000);
         }
