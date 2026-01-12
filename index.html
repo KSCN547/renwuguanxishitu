@@ -2,79 +2,67 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>3D人物关系档案 - 权限管理版</title>
+    <title>3D人物关系档案</title>
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
-        :root { --primary: #007bff; --success: #28a745; }
-        body { margin: 0; background-color: #e3f2fd; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
-        .ui-overlay { position: absolute; z-index: 9999; pointer-events: auto; }
-        #ui-panel { top: 15px; left: 15px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 12px; width: 250px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; display: none; }
-        #detail-card { top: 70px; right: 15px; background: white; padding: 20px; border-radius: 12px; width: 320px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border-left: 8px solid var(--primary); }
+        :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; }
+        body { margin: 0; background: #e3f2fd; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
+        .ui-overlay { position: absolute; z-index: 99; pointer-events: auto; }
+        #ui-panel { top: 15px; left: 15px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 12px; width: 240px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; display: none; }
+        #detail-card { top: 70px; right: 15px; background: white; padding: 20px; border-radius: 12px; width: 300px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border-left: 8px solid var(--primary); }
         .search-box { top: 15px; right: 15px; width: 280px; }
-        .search-box input { width: 100%; padding: 12px 18px; border-radius: 25px; border: 2px solid var(--primary); outline: none; background: white; font-weight: bold; cursor: pointer; }
-        input, select, textarea { width: 100%; margin: 6px 0; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
-        button { width: 100%; padding: 12px; cursor: pointer; border: none; border-radius: 8px; font-weight: bold; margin-top: 8px; background: var(--primary); color: white; transition: 0.2s; }
-        button:hover { filter: brightness(1.1); }
-        .upload-label { display: block; background: #f8f9fa; padding: 8px; border-radius: 8px; text-align: center; font-size: 12px; cursor: pointer; border: 1px dashed #aaa; margin: 5px 0; }
-        .tag { background: #e7f3ff; color: #007bff; padding: 4px 8px; border-radius: 6px; font-size: 12px; margin: 2px; display: inline-block; font-weight: bold; }
-        .rel-table { width: 100%; font-size: 12px; margin-top: 15px; border-collapse: collapse; }
-        .rel-table td { border-bottom: 1px solid #eee; padding: 10px 4px; }
-        .link-tooltip { position: absolute; background: rgba(255,255,255,0.98); color: #222; padding: 12px; border-radius: 10px; font-size: 14px; z-index: 10000; display: none; pointer-events: none; border: 1px solid #ccc; box-shadow: 0 4px 12px rgba(0,0,0,0.1); }
-        #sync-text { font-size: 12px; color: #666; text-align: center; margin-top: 5px; }
+        .search-box input { width: 100%; padding: 12px 18px; border-radius: 25px; border: 2px solid var(--primary); outline: none; }
+        input, select, textarea { width: 100%; margin: 5px 0; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; cursor: pointer; border: none; border-radius: 8px; font-weight: bold; margin-top: 5px; background: var(--primary); color: white; }
+        .tag { background: #e7f3ff; color: #007bff; padding: 3px 8px; border-radius: 5px; font-size: 11px; margin: 2px; display: inline-block; }
+        .rel-table { width: 100%; font-size: 12px; margin-top: 10px; border-collapse: collapse; }
+        .rel-table td { border-bottom: 1px solid #eee; padding: 8px 2px; }
+        #sync-text { font-size: 11px; color: #666; text-align: center; margin: 5px 0; }
     </style>
 </head>
 <body>
 
     <div class="ui-overlay search-box">
-        <input type="text" placeholder="🔍 搜索姓名或外号..." oninput="handleSearch(this.value)" onclick="handleSecretClick()">
+        <input type="text" placeholder="🔍 搜索姓名/外号..." oninput="handleSearch(this.value)" onclick="handleSecretClick()">
     </div>
 
     <div id="ui-panel" class="ui-overlay">
-        <h3 style="margin:0 0 10px 0; color:#333">👤 档案录入</h3>
-        <input type="text" id="nodeName" placeholder="姓名 (必填)">
+        <h4 style="margin:0">👤 资料录入</h4>
+        <input type="text" id="nodeName" placeholder="姓名">
         <input type="text" id="nodeNick" placeholder="外号 (逗号隔开)">
-        <label class="upload-label">📁 上传头像图片<input type="file" accept="image/*" style="display:none" onchange="handleImg(this)"></label>
-        <input type="text" id="nodeAvatar" placeholder="或者图片URL">
-        <textarea id="nodeDesc" placeholder="人物背景简介..." rows="2"></textarea>
-        <button onclick="addNode()">保存资料</button>
-        <hr style="margin:15px 0; opacity:0.1">
-        <h3 style="margin:0 0 10px 0; color:#333">🔗 建立连接</h3>
+        <input type="text" id="nodeAvatar" placeholder="头像 URL">
+        <textarea id="nodeDesc" placeholder="简介..." rows="2"></textarea>
+        <button onclick="addNode()">保存人物</button>
+        <hr style="opacity:0.1">
+        <h4 style="margin:0">🔗 建立关系</h4>
         <input type="text" id="source" placeholder="甲方姓名">
         <input type="text" id="target" placeholder="乙方姓名">
         <select id="relType">
             <option value="cp">CP (深玫红)</option>
             <option value="好友">好友 (翡翠绿)</option>
             <option value="队友">队友 (深海蓝)</option>
-            <option value="室友">室友 (焦糖橙)</option>
-            <option value="becp">BECP (暗靛紫)</option>
             <option value="仇人">仇人 (朱砂红)</option>
         </select>
-        <textarea id="relDesc" placeholder="描述这段关系..." rows="2"></textarea>
-        <button style="background:var(--success)" onclick="addLink()">确认建立</button>
-        <div id="sync-text">📡 正在同步云端...</div>
-        <button onclick="logout()" style="background:#6c757d; margin-top: 15px; font-size: 11px;">🔒 退出管理模式</button>
+        <button style="background:var(--success)" onclick="addLink()">确认连接</button>
+        <div id="sync-text">📡 云端就绪</div>
+        <button onclick="logout()" style="background:#6c757d; font-size:10px">退出管理</button>
     </div>
 
     <div id="detail-card" class="ui-overlay">
         <div style="text-align:center">
-            <img id="c-avatar" src="" style="width:80px;height:80px;border-radius:50%;object-fit:cover;border:3px solid var(--primary)">
-            <h2 id="c-name" style="margin:10px 0 5px 0; color:#333"></h2>
+            <img id="c-avatar" style="width:70px;height:70px;border-radius:50%;object-fit:cover;border:2px solid var(--primary)">
+            <h3 id="c-name" style="margin:8px 0"></h3>
             <div id="c-nicks"></div>
         </div>
-        <p id="c-desc" style="font-size:13px; color:#555; margin:10px 0; line-height:1.5; background:#f5faff; padding:8px; border-radius:6px"></p>
-        <div style="max-height: 150px; overflow-y: auto;">
-            <table class="rel-table"><tbody id="c-rel-body"></tbody></table>
-        </div>
-        <div style="margin-top:15px;">
-            <button id="editBtn" onclick="editCurrentNode()" style="background:#f0f0f0; color:#444; border:1px solid #ccc; display:none">修改资料</button>
-            <button id="delNodeBtn" onclick="deleteCurrentNode()" style="background:#dc3545; color:white; display:none; margin-top:5px">⚠️ 删除此人及其关系</button>
-            <button onclick="resetFocus()" style="background:var(--success); margin-top:5px">恢复完整视图</button>
-            <button onclick="closeCard()" style="background:#eee; color:#666; margin-top:5px">关闭</button>
+        <p id="c-desc" style="font-size:13px; color:#555; line-height:1.4"></p>
+        <table class="rel-table"><tbody id="c-rel-body"></tbody></table>
+        <div style="margin-top:15px">
+            <button id="delNodeBtn" onclick="deleteCurrentNode()" style="background:var(--danger); display:none">⚠️ 删除此人</button>
+            <button onclick="closeCard()" style="background:#eee; color:#666">关闭</button>
         </div>
     </div>
 
-    <div id="link-pop" class="link-tooltip"></div>
     <div id="3d-graph"></div>
 
     <script>
@@ -82,250 +70,127 @@
         const SB_KEY = 'sb_publishable_QB7wPNVsq0olx3opmZXDzA_83yJm1qD';
         const sb = supabase.createClient(SB_URL, SB_KEY);
 
-        let gData = { nodes: [], links: [] };
-        let focusNode = null;
-        let tempImgBase64 = "";
-        let isAdmin = false;
-        let Graph = null;
+        let gData = { nodes: [], links: [] }, focusNode = null, isAdmin = false;
+        const REL_STYLE = { 'cp': '#880044', '好友': '#004400', '队友': '#003344', '仇人': '#660000' };
 
-        const REL_STYLE = {
-            'cp': { color: '#880044', width: 0.8 },
-            '好友': { color: '#004400', width: 0.8 },
-            '队友': { color: '#003344', width: 0.8 },
-            '室友': { color: '#773300', width: 0.8 },
-            'becp': { color: '#220044', width: 0.8 },
-            '仇人': { color: '#660000', width: 0.8 }
-        };
+        const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
+            .backgroundColor('#f0f8ff')
+            .nodeThreeObject(node => {
+                // 动态获取 THREE，解决 undefined 报错
+                const THREE = Graph.renderer().getContext().canvas.ownerDocument.defaultView.THREE;
+                const isFocus = focusNode && node.id === focusNode.id;
+                const group = new THREE.Group();
+                const size = isFocus ? 11 : 7;
+                
+                const texture = new THREE.TextureLoader().load(node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`);
+                const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
+                group.add(sphere);
 
-        function initGraph() {
-            const graphContainer = document.getElementById('3d-graph');
-            Graph = ForceGraph3D()(graphContainer);
-            const THREE = Graph.THREE(); 
-
-            Graph.backgroundColor('#f0f8ff')
-                .showNavInfo(false)
-                .nodeThreeObject(node => {
-                    const group = new THREE.Group();
-                    const isFocus = focusNode && node.id === focusNode.id;
-                    const size = isFocus ? 11 : 7;
-                    const texture = new THREE.TextureLoader().load(node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`);
-                    const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
-                    group.add(sphere);
-                    
-                    const canvas = document.createElement('canvas');
-                    const ctx = canvas.getContext('2d');
-                    canvas.width = 160; canvas.height = 50;
-                    ctx.fillStyle = isFocus ? 'rgba(0,123,255,1)' : 'rgba(80,80,80,1)';
-                    ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(148, 0); ctx.quadraticCurveTo(160, 0, 160, 12); ctx.lineTo(160, 38); ctx.quadraticCurveTo(160, 50, 148, 50); ctx.lineTo(12, 50); ctx.quadraticCurveTo(0, 50, 0, 38); ctx.lineTo(0, 12); ctx.quadraticCurveTo(0, 0, 12, 0); ctx.fill();
-                    ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
-                    ctx.fillText(node.id, 80, 33);
-                    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-                    sprite.position.y = size + 8; sprite.scale.set(16, 5, 1);
-                    group.add(sprite);
-                    return group;
-                })
-                .linkCurvature(link => {
-                    const idA = link.source.id || link.source;
-                    const idB = link.target.id || link.target;
-                    const siblings = gData.links.filter(l => {
-                        const s = l.source.id || l.source; const t = l.target.id || l.target;
-                        return (s === idA && t === idB) || (s === idB && t === idA);
-                    });
-                    return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
-                })
-                .linkColor(link => REL_STYLE[link.type]?.color || '#333')
-                .nodeVisibility(node => {
-                    if (!focusNode) return true;
-                    return node.id === focusNode.id || gData.links.some(l =>
-                        ((l.source.id || l.source) === focusNode.id && (l.target.id || l.target) === node.id) ||
-                        ((l.target.id || l.target) === focusNode.id && (l.source.id || l.source) === node.id)
-                    );
-                })
-                .linkVisibility(link => {
-                    if (!focusNode) return true;
-                    const sId = link.source.id || link.source;
-                    const tId = link.target.id || link.target;
-                    return sId === focusNode.id || tId === focusNode.id;
-                })
-                .onNodeClick(node => { focusNode = node; showDetail(node); refreshGraph(); })
-                .onLinkClick((link, event) => {
-                    const pop = document.getElementById('link-pop');
-                    pop.innerHTML = `<b style="color:${REL_STYLE[link.type].color}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
-                    pop.style.display = 'block';
-                    pop.style.left = (event.clientX + 20) + 'px'; pop.style.top = (event.clientY + 20) + 'px';
-                    setTimeout(() => { pop.style.display = 'none'; }, 4000);
-                });
-            
-            loadData();
-        }
+                const canvas = document.createElement('canvas');
+                const ctx = canvas.getContext('2d');
+                canvas.width = 120; canvas.height = 40;
+                ctx.fillStyle = isFocus ? '#007bff' : '#555';
+                ctx.beginPath(); ctx.roundRect(0, 0, 120, 40, 8); ctx.fill();
+                ctx.font = '20px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
+                ctx.fillText(node.id, 60, 28);
+                
+                const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+                sprite.position.y = size + 6; sprite.scale.set(12, 4, 1);
+                group.add(sprite);
+                return group;
+            })
+            .linkColor(l => REL_STYLE[l.type] || '#999')
+            .onNodeClick(node => { focusNode = node; showDetail(node); Graph.refresh(); });
 
         async function loadData() {
-            const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
-            if (!error && data) {
-                // 暴力重置：克隆云端数据并彻底清理旧坐标
-                gData = JSON.parse(JSON.stringify(data.data));
-                refreshGraph(true); // 传入true代表强制重绘连线
-                document.getElementById('sync-text').innerText = "✅ 数据已对齐";
+            const { data } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
+            if (data) { gData = data.data; Graph.graphData(gData); }
+            const { data: { user } } = await sb.auth.getUser();
+            if (user) {
+                isAdmin = true;
+                document.getElementById('ui-panel').style.display = 'block';
+                document.getElementById('delNodeBtn').style.display = 'block';
             }
-            checkAdmin();
-        }
-
-        function refreshGraph(hardReset = false) {
-            if (!Graph) return;
-
-            // 1. 每次刷新都清除所有坐标点
-            gData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
-            });
-
-            // 2. 核心修复：确保连线的 source/target 只是 ID 字符串
-            // 物理引擎运行后会把字符串变成对象，这会导致刷新时连线丢失
-            gData.links.forEach(l => {
-                if (typeof l.source === 'object') l.source = l.source.id;
-                if (typeof l.target === 'object') l.target = l.target.id;
-            });
-
-            // 3. 重新装载数据，让引擎重新从 ID 匹配节点
-            Graph.graphData(gData);
-            
-            // 4. 强制重启冷却模拟，确保连线立刻出现
-            Graph.d3ReheatSimulation();
         }
 
         async function saveData() {
             if (!isAdmin) return;
             document.getElementById('sync-text').innerText = "⏳ 同步中...";
-            
-            // 保存前必须深拷贝并剔除物理引擎注入的垃圾数据
             const cleanData = JSON.parse(JSON.stringify(gData));
-            cleanData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
-            });
-            cleanData.links.forEach(l => {
-                if (typeof l.source === 'object') l.source = l.source.id;
-                if (typeof l.target === 'object') l.target = l.target.id;
-            });
-
+            cleanData.nodes.forEach(n => ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(p => delete n[p]));
             const { error } = await sb.from('relation_graphs').update({ data: cleanData }).eq('id', 1);
             document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
         }
 
-        async function checkAdmin() {
-            const { data: { user } } = await sb.auth.getUser();
-            if (user) {
-                isAdmin = true;
-                document.getElementById('ui-panel').style.display = 'block';
-                document.getElementById('editBtn').style.display = 'block';
-                document.getElementById('delNodeBtn').style.display = 'block'; 
-            }
-        }
-
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
-            if (!name) return alert('姓名必填');
-            const avatar = tempImgBase64 || document.getElementById('nodeAvatar').value.trim();
-            const nicks = document.getElementById('nodeNick').value.split(/[,，]/).filter(t => t.trim());
-            const desc = document.getElementById('nodeDesc').value.trim();
-            let node = gData.nodes.find(n => n.id === name);
-            if (node) Object.assign(node, { avatar, nicks, desc });
-            else gData.nodes.push({ id: name, avatar, nicks, desc });
-            refreshGraph(); saveData(); resetForm();
-        }
-
-        function deleteCurrentNode() {
-            if (!focusNode) return;
-            if (confirm(`彻底删除【${focusNode.id}】？`)) {
-                const targetId = focusNode.id;
-                gData.nodes = gData.nodes.filter(n => n.id !== targetId);
-                gData.links = gData.links.filter(l => {
-                    const s = typeof l.source === 'object' ? l.source.id : l.source;
-                    const t = typeof l.target === 'object' ? l.target.id : l.target;
-                    return s !== targetId && t !== targetId;
-                });
-                closeCard(); refreshGraph(); saveData();
-            }
+            if (!name) return;
+            const node = gData.nodes.find(n => n.id === name);
+            const info = {
+                id: name,
+                avatar: document.getElementById('nodeAvatar').value,
+                nicks: document.getElementById('nodeNick').value.split(/[,，]/).filter(t => t),
+                desc: document.getElementById('nodeDesc').value
+            };
+            if (node) Object.assign(node, info); else gData.nodes.push(info);
+            Graph.graphData(gData); saveData();
         }
 
         function addLink() {
             const s = document.getElementById('source').value.trim();
             const t = document.getElementById('target').value.trim();
-            const type = document.getElementById('relType').value;
-            const desc = document.getElementById('relDesc').value.trim();
-            if (!gData.nodes.some(n => n.id === s) || !gData.nodes.some(n => n.id === t)) return alert("成员未录入");
-            gData.links.push({ source: s, target: t, type, desc });
-            refreshGraph(); saveData();
+            if (!s || !t) return;
+            gData.links.push({ source: s, target: t, type: document.getElementById('relType').value });
+            Graph.graphData(gData); saveData();
         }
 
-        function handleSearch(val) {
-            if (!val) { resetFocus(); return; }
-            const n = gData.nodes.find(n => n.id.includes(val) || (n.nicks && n.nicks.some(nick => nick.includes(val))));
-            if (n) { focusNode = n; showDetail(n); refreshGraph(); }
+        function deleteCurrentNode() {
+            if (!focusNode || !confirm(`确定删除 ${focusNode.id} 及其所有关系吗？`)) return;
+            const id = focusNode.id;
+            gData.nodes = gData.nodes.filter(n => n.id !== id);
+            gData.links = gData.links.filter(l => (l.source.id || l.source) !== id && (l.target.id || l.target) !== id);
+            closeCard(); Graph.graphData(gData); saveData();
+        }
+
+        function deleteLink(idx) {
+            if (!confirm("删除此条关系？")) return;
+            gData.links.splice(idx, 1);
+            Graph.graphData(gData); saveData(); showDetail(focusNode);
         }
 
         function showDetail(node) {
-            document.getElementById('c-avatar').src = node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`;
             document.getElementById('c-name').innerText = node.id;
-            document.getElementById('c-desc').innerText = node.desc || '暂无背景。';
+            document.getElementById('c-avatar').src = node.avatar || '';
+            document.getElementById('c-desc').innerText = node.desc || '无背景介绍';
             document.getElementById('c-nicks').innerHTML = (node.nicks || []).map(n => `<span class="tag">#${n}</span>`).join('');
             
-            const myLinks = gData.links.filter(l => {
-                const s = typeof l.source === 'object' ? l.source.id : l.source;
-                const t = typeof l.target === 'object' ? l.target.id : l.target;
-                return s === node.id || t === node.id;
-            });
-
+            const myLinks = gData.links.filter(l => (l.source.id || l.source) === node.id || (l.target.id || l.target) === node.id);
             document.getElementById('c-rel-body').innerHTML = myLinks.map(l => {
-                const s = typeof l.source === 'object' ? l.source.id : l.source;
-                const t = typeof l.target === 'object' ? l.target.id : l.target;
-                const other = s === node.id ? t : s;
-                const delBtn = isAdmin ? `<td><span style="color:red;cursor:pointer" onclick="deleteLinkByIndex(${gData.links.indexOf(l)})">删除</span></td>` : '';
-                return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type].color}"><b>${l.type}</b></td>${delBtn}</tr>`;
+                const other = (l.source.id || l.source) === node.id ? (l.target.id || l.target) : (l.source.id || l.source);
+                const del = isAdmin ? `<td onclick="deleteLink(${gData.links.indexOf(l)})" style="color:red;cursor:pointer">×</td>` : '';
+                return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type]}">${l.type}</td>${del}</tr>`;
             }).join('');
             document.getElementById('detail-card').style.display = 'block';
         }
 
-        function deleteLinkByIndex(idx) {
-            if(confirm("确定删除这条关系线？")) {
-                gData.links.splice(idx, 1);
-                refreshGraph(); saveData();
-                if(focusNode) showDetail(focusNode);
-            }
+        function handleSearch(v) {
+            const n = gData.nodes.find(n => n.id.includes(v) || (n.nicks && n.nicks.some(nk => nk.includes(v))));
+            if (n) { focusNode = n; showDetail(n); Graph.refresh(); }
         }
 
+        let count = 0;
         function handleSecretClick() {
-            clickCount++;
-            if (clickCount >= 3) { clickCount = 0; login(); }
-            setTimeout(() => { clickCount = 0; }, 1000);
-        }
-
-        async function login() {
-            const email = prompt("管理员邮箱:"); if (!email) return;
-            const password = prompt("密码:"); if (!password) return;
-            const { error } = await sb.auth.signInWithPassword({ email, password });
-            if (error) alert("验证失败"); else location.reload();
+            count++; if (count >= 3) {
+                const p = prompt("管理密码:");
+                if (p) sb.auth.signInWithPassword({email:'admin@test.com', password:p}).then(({error}) => error ? alert('错误') : location.reload());
+            }
+            setTimeout(() => count = 0, 1000);
         }
 
         async function logout() { await sb.auth.signOut(); location.reload(); }
-        function handleImg(input) {
-            const reader = new FileReader();
-            reader.onload = (e) => { tempImgBase64 = e.target.result; document.getElementById('nodeAvatar').value = "图片就绪"; };
-            reader.readAsDataURL(input.files[0]);
-        }
-        function editCurrentNode() {
-            document.getElementById('nodeName').value = focusNode.id;
-            document.getElementById('nodeNick').value = (focusNode.nicks || []).join(',');
-            document.getElementById('nodeDesc').value = focusNode.desc || '';
-        }
-        function resetFocus() { focusNode = null; refreshGraph(); }
-        function closeCard() { document.getElementById('detail-card').style.display = 'none'; resetFocus(); }
-        function resetForm() { ['nodeName', 'nodeNick', 'nodeAvatar', 'nodeDesc'].forEach(id => document.getElementById(id).value = ''); tempImgBase64 = ""; }
-
-        let clickCount = 0;
-        window.onload = initGraph;
+        function closeCard() { document.getElementById('detail-card').style.display = 'none'; focusNode = null; Graph.refresh(); }
+        
+        window.onload = loadData;
     </script>
 </body>
 </html>
