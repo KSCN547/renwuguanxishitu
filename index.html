@@ -87,6 +87,7 @@
         let focusNode = null;
         let tempImgBase64 = "";
         let isAdmin = false;
+        let Graph;
 
         const REL_STYLE = {
             'cp': { color: '#880044', width: 0.8 },
@@ -97,67 +98,78 @@
             '仇人': { color: '#660000', width: 0.8 }
         };
 
-        const Graph = ForceGraph3D()(document.getElementById('3d-graph'));
+        // 将初始化逻辑放入 init 函数
+        function initGraph() {
+            // 检查 THREE 是否存在，解决你的报错问题
+            if (typeof THREE === 'undefined') {
+                setTimeout(initGraph, 100);
+                return;
+            }
 
-        Graph.graphData(gData)
-            .backgroundColor('#f0f8ff')
-            .showNavInfo(false)
-            .nodeThreeObject(node => {
-                const group = new THREE.Group();
-                const isFocus = focusNode && node.id === focusNode.id;
-                const size = isFocus ? 11 : 7;
-                const texture = new THREE.TextureLoader().load(node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`);
-                const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
-                group.add(sphere);
-                const canvas = document.createElement('canvas');
-                const ctx = canvas.getContext('2d');
-                canvas.width = 160; canvas.height = 50;
-                ctx.fillStyle = isFocus ? 'rgba(0,123,255,1)' : 'rgba(80,80,80,1)';
-                ctx.roundRect(0, 0, 160, 50, 12); ctx.fill();
-                ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
-                ctx.fillText(node.id, 80, 33);
-                const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
-                sprite.position.y = size + 8; sprite.scale.set(16, 5, 1);
-                group.add(sprite);
-                return group;
-            })
-            .linkCurvature(link => {
-                const idA = link.source.id || link.source;
-                const idB = link.target.id || link.target;
-                const siblings = gData.links.filter(l => {
-                    const s = l.source.id || l.source; const t = l.target.id || l.target;
-                    return (s === idA && t === idB) || (s === idB && t === idA);
+            Graph = ForceGraph3D()(document.getElementById('3d-graph'));
+            
+            Graph.graphData(gData)
+                .backgroundColor('#f0f8ff')
+                .showNavInfo(false)
+                .nodeThreeObject(node => {
+                    const group = new THREE.Group();
+                    const isFocus = focusNode && node.id === focusNode.id;
+                    const size = isFocus ? 11 : 7;
+                    const texture = new THREE.TextureLoader().load(node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`);
+                    const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
+                    group.add(sphere);
+                    const canvas = document.createElement('canvas');
+                    const ctx = canvas.getContext('2d');
+                    canvas.width = 160; canvas.height = 50;
+                    ctx.fillStyle = isFocus ? 'rgba(0,123,255,1)' : 'rgba(80,80,80,1)';
+                    ctx.roundRect(0, 0, 160, 50, 12); ctx.fill();
+                    ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
+                    ctx.fillText(node.id, 80, 33);
+                    const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
+                    sprite.position.y = size + 8; sprite.scale.set(16, 5, 1);
+                    group.add(sprite);
+                    return group;
+                })
+                .linkCurvature(link => {
+                    const idA = link.source.id || link.source;
+                    const idB = link.target.id || link.target;
+                    const siblings = gData.links.filter(l => {
+                        const s = l.source.id || l.source; const t = l.target.id || l.target;
+                        return (s === idA && t === idB) || (s === idB && t === idA);
+                    });
+                    return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
+                })
+                .linkColor(link => REL_STYLE[link.type]?.color || '#333')
+                .linkWidth(0.8)
+                .linkMaterial(link => new THREE.MeshLambertMaterial({ 
+                    color: REL_STYLE[link.type]?.color || '#333', 
+                    transparent: false, 
+                    opacity: 1 
+                }))
+                .nodeVisibility(node => {
+                    if (!focusNode) return true;
+                    return node.id === focusNode.id || gData.links.some(l =>
+                        ((l.source.id || l.source) === focusNode.id && (l.target.id || l.target) === node.id) ||
+                        ((l.target.id || l.target) === focusNode.id && (l.source.id || l.source) === node.id)
+                    );
+                })
+                .linkVisibility(link => {
+                    if (!focusNode) return true;
+                    const sId = link.source.id || link.source;
+                    const tId = link.target.id || link.target;
+                    return sId === focusNode.id || tId === focusNode.id;
+                })
+                .onNodeClick(node => { focusNode = node; showDetail(node); refreshGraph(); })
+                .onLinkClick((link, event) => {
+                    const pop = document.getElementById('link-pop');
+                    pop.innerHTML = `<b style="color:${REL_STYLE[link.type].color}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
+                    pop.style.display = 'block';
+                    pop.style.left = (event.clientX + 20) + 'px'; pop.style.top = (event.clientY + 20) + 'px';
+                    setTimeout(() => { pop.style.display = 'none'; }, 4000);
                 });
-                return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
-            })
-            .linkColor(link => REL_STYLE[link.type]?.color || '#333')
-            .linkWidth(0.8)
-            .linkMaterial(link => new THREE.MeshLambertMaterial({ 
-                color: REL_STYLE[link.type]?.color || '#333', 
-                transparent: false, 
-                opacity: 1 
-            }))
-            .nodeVisibility(node => {
-                if (!focusNode) return true;
-                return node.id === focusNode.id || gData.links.some(l =>
-                    ((l.source.id || l.source) === focusNode.id && (l.target.id || l.target) === node.id) ||
-                    ((l.target.id || l.target) === focusNode.id && (l.source.id || l.source) === node.id)
-                );
-            })
-            .linkVisibility(link => {
-                if (!focusNode) return true;
-                const sId = link.source.id || link.source;
-                const tId = link.target.id || link.target;
-                return sId === focusNode.id || tId === focusNode.id;
-            })
-            .onNodeClick(node => { focusNode = node; showDetail(node); refreshGraph(); })
-            .onLinkClick((link, event) => {
-                const pop = document.getElementById('link-pop');
-                pop.innerHTML = `<b style="color:${REL_STYLE[link.type].color}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
-                pop.style.display = 'block';
-                pop.style.left = (event.clientX + 20) + 'px'; pop.style.top = (event.clientY + 20) + 'px';
-                setTimeout(() => { pop.style.display = 'none'; }, 4000);
-            });
+            
+            loadData(); // 初始化完图形后再加载数据
+        }
 
         let clickCount = 0;
         function handleSecretClick() {
@@ -236,7 +248,6 @@
             resetForm();
         }
 
-        // 新增：一键删除人物功能逻辑
         function deleteCurrentNode() {
             if (!focusNode) return;
             if (confirm(`确定要彻底删除【${focusNode.id}】吗？所有关系线也会被删除！`)) {
@@ -309,7 +320,8 @@
         function closeCard() { document.getElementById('detail-card').style.display = 'none'; resetFocus(); }
         function resetForm() { ['nodeName', 'nodeNick', 'nodeAvatar', 'nodeDesc'].forEach(id => document.getElementById(id).value = ''); tempImgBase64 = ""; }
 
-        window.onload = loadData;
+        // 使用 DOMContentLoaded 确保页面资源就绪
+        window.addEventListener('DOMContentLoaded', initGraph);
     </script>
 </body>
 </html>
