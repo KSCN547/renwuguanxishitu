@@ -98,15 +98,11 @@
         };
 
         function initGraph() {
-            // 直接从 ForceGraph3D 内部获取 THREE，防止外部未定义报错
             const graphContainer = document.getElementById('3d-graph');
             Graph = ForceGraph3D()(graphContainer);
-            
-            // 获取内置的 THREE 对象，这步最关键
             const THREE = Graph.THREE(); 
 
-            Graph.graphData(gData)
-                .backgroundColor('#f0f8ff')
+            Graph.backgroundColor('#f0f8ff')
                 .showNavInfo(false)
                 .nodeThreeObject(node => {
                     const group = new THREE.Group();
@@ -120,9 +116,7 @@
                     const ctx = canvas.getContext('2d');
                     canvas.width = 160; canvas.height = 50;
                     ctx.fillStyle = isFocus ? 'rgba(0,123,255,1)' : 'rgba(80,80,80,1)';
-                    // 兼容旧版浏览器手动绘制圆角
                     ctx.beginPath(); ctx.moveTo(12, 0); ctx.lineTo(148, 0); ctx.quadraticCurveTo(160, 0, 160, 12); ctx.lineTo(160, 38); ctx.quadraticCurveTo(160, 50, 148, 50); ctx.lineTo(12, 50); ctx.quadraticCurveTo(0, 50, 0, 38); ctx.lineTo(0, 12); ctx.quadraticCurveTo(0, 0, 12, 0); ctx.fill();
-                    
                     ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
                     ctx.fillText(node.id, 80, 33);
                     const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
@@ -168,11 +162,56 @@
         async function loadData() {
             const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
             if (!error && data) {
-                gData = data.data;
-                refreshGraph();
+                // 暴力重置：克隆云端数据并彻底清理旧坐标
+                gData = JSON.parse(JSON.stringify(data.data));
+                refreshGraph(true); // 传入true代表强制重绘连线
                 document.getElementById('sync-text').innerText = "✅ 数据已对齐";
             }
             checkAdmin();
+        }
+
+        function refreshGraph(hardReset = false) {
+            if (!Graph) return;
+
+            // 1. 每次刷新都清除所有坐标点
+            gData.nodes.forEach(n => {
+                delete n.x; delete n.y; delete n.z;
+                delete n.vx; delete n.vy; delete n.vz;
+                delete n.fx; delete n.fy; delete n.fz;
+            });
+
+            // 2. 核心修复：确保连线的 source/target 只是 ID 字符串
+            // 物理引擎运行后会把字符串变成对象，这会导致刷新时连线丢失
+            gData.links.forEach(l => {
+                if (typeof l.source === 'object') l.source = l.source.id;
+                if (typeof l.target === 'object') l.target = l.target.id;
+            });
+
+            // 3. 重新装载数据，让引擎重新从 ID 匹配节点
+            Graph.graphData(gData);
+            
+            // 4. 强制重启冷却模拟，确保连线立刻出现
+            Graph.d3ReheatSimulation();
+        }
+
+        async function saveData() {
+            if (!isAdmin) return;
+            document.getElementById('sync-text').innerText = "⏳ 同步中...";
+            
+            // 保存前必须深拷贝并剔除物理引擎注入的垃圾数据
+            const cleanData = JSON.parse(JSON.stringify(gData));
+            cleanData.nodes.forEach(n => {
+                delete n.x; delete n.y; delete n.z;
+                delete n.vx; delete n.vy; delete n.vz;
+                delete n.fx; delete n.fy; delete n.fz;
+            });
+            cleanData.links.forEach(l => {
+                if (typeof l.source === 'object') l.source = l.source.id;
+                if (typeof l.target === 'object') l.target = l.target.id;
+            });
+
+            const { error } = await sb.from('relation_graphs').update({ data: cleanData }).eq('id', 1);
+            document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
         }
 
         async function checkAdmin() {
@@ -183,28 +222,6 @@
                 document.getElementById('editBtn').style.display = 'block';
                 document.getElementById('delNodeBtn').style.display = 'block'; 
             }
-        }
-
-        async function saveData() {
-            if (!isAdmin) return;
-            document.getElementById('sync-text').innerText = "⏳ 同步中...";
-            const cleanData = JSON.parse(JSON.stringify(gData));
-            cleanData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
-            });
-            const { error } = await sb.from('relation_graphs').update({ data: cleanData }).eq('id', 1);
-            document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
-        }
-
-        function refreshGraph() {
-            if (!Graph) return;
-            gData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-            });
-            Graph.graphData(gData);
         }
 
         function addNode() {
@@ -221,10 +238,14 @@
 
         function deleteCurrentNode() {
             if (!focusNode) return;
-            if (confirm(`确定要彻底删除【${focusNode.id}】吗？`)) {
+            if (confirm(`彻底删除【${focusNode.id}】？`)) {
                 const targetId = focusNode.id;
                 gData.nodes = gData.nodes.filter(n => n.id !== targetId);
-                gData.links = gData.links.filter(l => (l.source.id || l.source) !== targetId && (l.target.id || l.target) !== targetId);
+                gData.links = gData.links.filter(l => {
+                    const s = typeof l.source === 'object' ? l.source.id : l.source;
+                    const t = typeof l.target === 'object' ? l.target.id : l.target;
+                    return s !== targetId && t !== targetId;
+                });
                 closeCard(); refreshGraph(); saveData();
             }
         }
@@ -250,9 +271,17 @@
             document.getElementById('c-name').innerText = node.id;
             document.getElementById('c-desc').innerText = node.desc || '暂无背景。';
             document.getElementById('c-nicks').innerHTML = (node.nicks || []).map(n => `<span class="tag">#${n}</span>`).join('');
-            const myLinks = gData.links.filter(l => (l.source.id || l.source) === node.id || (l.target.id || l.target) === node.id);
+            
+            const myLinks = gData.links.filter(l => {
+                const s = typeof l.source === 'object' ? l.source.id : l.source;
+                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                return s === node.id || t === node.id;
+            });
+
             document.getElementById('c-rel-body').innerHTML = myLinks.map(l => {
-                const other = (l.source.id || l.source) === node.id ? (l.target.id || l.target) : (l.source.id || l.source);
+                const s = typeof l.source === 'object' ? l.source.id : l.source;
+                const t = typeof l.target === 'object' ? l.target.id : l.target;
+                const other = s === node.id ? t : s;
                 const delBtn = isAdmin ? `<td><span style="color:red;cursor:pointer" onclick="deleteLinkByIndex(${gData.links.indexOf(l)})">删除</span></td>` : '';
                 return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type].color}"><b>${l.type}</b></td>${delBtn}</tr>`;
             }).join('');
