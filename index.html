@@ -3,6 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <title>3D人物关系档案</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
     <style>
@@ -45,8 +46,8 @@
             <option value="仇人">仇人 (朱砂红)</option>
         </select>
         <button style="background:var(--success)" onclick="addLink()">确认连接</button>
-        <div id="sync-text">📡 云端就绪</div>
-        <button onclick="logout()" style="background:#6c757d; font-size:10px">退出管理</button>
+        <div id="sync-text">📡 数据库状态</div>
+        <button onclick="logout()" style="background:#6c757d; font-size:10px">退出管理模式</button>
     </div>
 
     <div id="detail-card" class="ui-overlay">
@@ -58,7 +59,7 @@
         <p id="c-desc" style="font-size:13px; color:#555; line-height:1.4"></p>
         <table class="rel-table"><tbody id="c-rel-body"></tbody></table>
         <div style="margin-top:15px">
-            <button id="delNodeBtn" onclick="deleteCurrentNode()" style="background:var(--danger); display:none">⚠️ 删除此人</button>
+            <button id="delNodeBtn" onclick="deleteCurrentNode()" style="background:var(--danger); display:none">⚠️ 删除此人及其关系</button>
             <button onclick="closeCard()" style="background:#eee; color:#666">关闭</button>
         </div>
     </div>
@@ -76,13 +77,12 @@
         const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
             .backgroundColor('#f0f8ff')
             .nodeThreeObject(node => {
-                // 动态获取 THREE，解决 undefined 报错
-                const THREE = Graph.renderer().getContext().canvas.ownerDocument.defaultView.THREE;
                 const isFocus = focusNode && node.id === focusNode.id;
                 const group = new THREE.Group();
                 const size = isFocus ? 11 : 7;
                 
-                const texture = new THREE.TextureLoader().load(node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`);
+                const img = node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`;
+                const texture = new THREE.TextureLoader().load(img);
                 const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
                 group.add(sphere);
 
@@ -91,7 +91,7 @@
                 canvas.width = 120; canvas.height = 40;
                 ctx.fillStyle = isFocus ? '#007bff' : '#555';
                 ctx.beginPath(); ctx.roundRect(0, 0, 120, 40, 8); ctx.fill();
-                ctx.font = '20px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
+                ctx.font = 'bold 20px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
                 ctx.fillText(node.id, 60, 28);
                 
                 const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
@@ -124,7 +124,7 @@
 
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
-            if (!name) return;
+            if (!name) return alert("姓名不能为空");
             const node = gData.nodes.find(n => n.id === name);
             const info = {
                 id: name,
@@ -139,13 +139,13 @@
         function addLink() {
             const s = document.getElementById('source').value.trim();
             const t = document.getElementById('target').value.trim();
-            if (!s || !t) return;
+            if (!s || !t) return alert("两方姓名必填");
             gData.links.push({ source: s, target: t, type: document.getElementById('relType').value });
             Graph.graphData(gData); saveData();
         }
 
         function deleteCurrentNode() {
-            if (!focusNode || !confirm(`确定删除 ${focusNode.id} 及其所有关系吗？`)) return;
+            if (!focusNode || !confirm(`确认彻底删除 ${focusNode.id} 吗？`)) return;
             const id = focusNode.id;
             gData.nodes = gData.nodes.filter(n => n.id !== id);
             gData.links = gData.links.filter(l => (l.source.id || l.source) !== id && (l.target.id || l.target) !== id);
@@ -161,19 +161,20 @@
         function showDetail(node) {
             document.getElementById('c-name').innerText = node.id;
             document.getElementById('c-avatar').src = node.avatar || '';
-            document.getElementById('c-desc').innerText = node.desc || '无背景介绍';
+            document.getElementById('c-desc').innerText = node.desc || '暂无背景资料';
             document.getElementById('c-nicks').innerHTML = (node.nicks || []).map(n => `<span class="tag">#${n}</span>`).join('');
             
             const myLinks = gData.links.filter(l => (l.source.id || l.source) === node.id || (l.target.id || l.target) === node.id);
             document.getElementById('c-rel-body').innerHTML = myLinks.map(l => {
                 const other = (l.source.id || l.source) === node.id ? (l.target.id || l.target) : (l.source.id || l.source);
-                const del = isAdmin ? `<td onclick="deleteLink(${gData.links.indexOf(l)})" style="color:red;cursor:pointer">×</td>` : '';
+                const del = isAdmin ? `<td onclick="deleteLink(${gData.links.indexOf(l)})" style="color:red;cursor:pointer;font-weight:bold">×</td>` : '';
                 return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type]}">${l.type}</td>${del}</tr>`;
             }).join('');
             document.getElementById('detail-card').style.display = 'block';
         }
 
         function handleSearch(v) {
+            if(!v) return;
             const n = gData.nodes.find(n => n.id.includes(v) || (n.nicks && n.nicks.some(nk => nk.includes(v))));
             if (n) { focusNode = n; showDetail(n); Graph.refresh(); }
         }
@@ -182,7 +183,7 @@
         function handleSecretClick() {
             count++; if (count >= 3) {
                 const p = prompt("管理密码:");
-                if (p) sb.auth.signInWithPassword({email:'admin@test.com', password:p}).then(({error}) => error ? alert('错误') : location.reload());
+                if (p) sb.auth.signInWithPassword({email:'admin@test.com', password:p}).then(({error}) => error ? alert('密码错误') : location.reload());
             }
             setTimeout(() => count = 0, 1000);
         }
