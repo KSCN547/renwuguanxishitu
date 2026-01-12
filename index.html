@@ -181,7 +181,7 @@
                 isAdmin = true;
                 document.getElementById('ui-panel').style.display = 'block';
                 document.getElementById('editBtn').style.display = 'block';
-                document.getElementById('delNodeBtn').style.display = 'block'; // 管理员显示删除按钮
+                document.getElementById('delNodeBtn').style.display = 'block'; 
             }
         }
 
@@ -236,24 +236,20 @@
             resetForm();
         }
 
-        // 新增：一键删除人物功能
+        // 新增：一键删除人物功能逻辑
         function deleteCurrentNode() {
             if (!focusNode) return;
-            if (confirm(`确定要删除人物【${focusNode.id}】吗？\n这将同时删除所有与之相关的关系连线！此操作不可撤销。`)) {
+            if (confirm(`确定要彻底删除【${focusNode.id}】吗？所有关系线也会被删除！`)) {
                 const targetId = focusNode.id;
-                // 1. 删除节点
                 gData.nodes = gData.nodes.filter(n => n.id !== targetId);
-                // 2. 删除所有相关连线
                 gData.links = gData.links.filter(l => {
                     const s = l.source.id || l.source;
                     const t = l.target.id || l.target;
                     return s !== targetId && t !== targetId;
                 });
-                
-                closeCard(); // 关闭详情页
-                refreshGraph(); // 刷新图形
-                saveData(); // 保存到云端
-                alert("已成功删除该人物及其所有关系。");
+                closeCard();
+                refreshGraph();
+                saveData();
             }
         }
 
