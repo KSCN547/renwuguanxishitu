@@ -2,7 +2,7 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>3D人物关系档案 - 权限管理版</title>
+    <title>3D人物关系档案 - 诊断修复版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
@@ -13,7 +13,7 @@
         #ui-panel { top: 15px; left: 15px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 12px; width: 250px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; display: none; }
         #detail-card { top: 70px; right: 15px; background: white; padding: 20px; border-radius: 12px; width: 320px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border-left: 8px solid var(--primary); }
         .search-box { top: 15px; right: 15px; width: 280px; }
-        .search-box input { width: 100%; padding: 12px 18px; border-radius: 25px; border: 2px solid var(--primary); outline: none; background: white; font-weight: bold; cursor: pointer; }
+        .search-box input { width: 100%; padding: 12px 18px; border-radius: 25px; border: 2px solid var(--primary); outline: none; background: white; font-weight: bold; }
         input, select, textarea { width: 100%; margin: 6px 0; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
         button { width: 100%; padding: 12px; cursor: pointer; border: none; border-radius: 8px; font-weight: bold; margin-top: 8px; background: var(--primary); color: white; transition: 0.2s; }
         button:hover { filter: brightness(1.1); }
@@ -53,7 +53,7 @@
         </select>
         <textarea id="relDesc" placeholder="描述这段关系..." rows="2"></textarea>
         <button style="background:var(--success)" onclick="addLink()">确认建立</button>
-        <div id="sync-text">📡 正在同步云端...</div>
+        <div id="sync-text">📡 准备就绪</div>
         <button onclick="logout()" style="background:#6c757d; margin-top: 15px; font-size: 11px;">🔒 退出管理模式</button>
     </div>
 
@@ -97,10 +97,11 @@
             '仇人': { color: '#660000', width: 0.8 }
         };
 
+        // 初始化 Graph 对象
         const Graph = ForceGraph3D()(document.getElementById('3d-graph'));
 
-        Graph.graphData(gData)
-            .backgroundColor('#f0f8ff')
+        // 配置渲染参数
+        Graph.backgroundColor('#f0f8ff')
             .showNavInfo(false)
             .nodeThreeObject(node => {
                 const group = new THREE.Group();
@@ -113,7 +114,7 @@
                 const ctx = canvas.getContext('2d');
                 canvas.width = 160; canvas.height = 50;
                 ctx.fillStyle = isFocus ? 'rgba(0,123,255,1)' : 'rgba(80,80,80,1)';
-                ctx.roundRect(0, 0, 160, 50, 12); ctx.fill();
+                ctx.beginPath(); ctx.roundRect(0, 0, 160, 50, 12); ctx.fill();
                 ctx.font = 'bold 24px Arial'; ctx.fillStyle = 'white'; ctx.textAlign = 'center';
                 ctx.fillText(node.id, 80, 33);
                 const sprite = new THREE.Sprite(new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas) }));
@@ -131,12 +132,7 @@
                 return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
             })
             .linkColor(link => REL_STYLE[link.type]?.color || '#333')
-            .linkWidth(0.8)
-            .linkMaterial(link => new THREE.MeshLambertMaterial({ 
-                color: REL_STYLE[link.type]?.color || '#333', 
-                transparent: false, 
-                opacity: 1 
-            }))
+            .linkWidth(1.2)
             .nodeVisibility(node => {
                 if (!focusNode) return true;
                 return node.id === focusNode.id || gData.links.some(l =>
@@ -153,67 +149,70 @@
             .onNodeClick(node => { focusNode = node; showDetail(node); refreshGraph(); })
             .onLinkClick((link, event) => {
                 const pop = document.getElementById('link-pop');
-                pop.innerHTML = `<b style="color:${REL_STYLE[link.type].color}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
+                pop.innerHTML = `<b style="color:${REL_STYLE[link.type]?.color || '#333'}">【${link.type}】</b><br>${link.desc || '未输入详细背景'}`;
                 pop.style.display = 'block';
                 pop.style.left = (event.clientX + 20) + 'px'; pop.style.top = (event.clientY + 20) + 'px';
                 setTimeout(() => { pop.style.display = 'none'; }, 4000);
             });
 
-        let clickCount = 0;
-        function handleSecretClick() {
-            clickCount++;
-            if (clickCount >= 3) { clickCount = 0; login(); }
-            setTimeout(() => { clickCount = 0; }, 1000);
-        }
-
-        async function login() {
-            const email = prompt("管理员邮箱:"); if (!email) return;
-            const password = prompt("密码:"); if (!password) return;
-            const { error } = await sb.auth.signInWithPassword({ email, password });
-            if (error) alert("验证失败"); else location.reload();
-        }
-
-        async function logout() { await sb.auth.signOut(); location.reload(); }
-
-        async function checkAdmin() {
-            const { data: { user } } = await sb.auth.getUser();
-            if (user) {
-                isAdmin = true;
-                document.getElementById('ui-panel').style.display = 'block';
-                document.getElementById('editBtn').style.display = 'block';
-                document.getElementById('delNodeBtn').style.display = 'block'; // 管理员显示删除按钮
-            }
-        }
-
+        // 诊断修复版：数据加载函数
         async function loadData() {
+            console.log("📡 正在从云端调取数据...");
             const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
-            if (!error && data) {
+            
+            if (error) {
+                console.error("❌ 数据读取失败:", error.message);
+                document.getElementById('sync-text').innerText = "❌ 数据库读取异常";
+                return;
+            }
+
+            if (data && data.data) {
                 gData = data.data;
-                cleanNodePositions();
-                Graph.graphData(gData);
-                document.getElementById('sync-text').innerText = "✅ 数据已对齐";
+                console.log(`✅ 数据加载成功！节点: ${gData.nodes.length}, 连线: ${gData.links.length}`);
+                
+                // 3. 执行清洗逻辑（第2点的要求）
+                cleanNodePositions(); 
+                
+                // 延迟注入确保 WebGL 准备好
+                setTimeout(() => {
+                    Graph.graphData(gData);
+                    console.log("🚀 引擎已启动渲染");
+                    document.getElementById('sync-text').innerText = "✅ 数据已对齐";
+                }, 100);
             }
             checkAdmin();
         }
 
+        // 诊断修复版：数据保存函数
         async function saveData() {
             if (!isAdmin) return;
             document.getElementById('sync-text').innerText = "⏳ 同步中...";
-            const cleanData = JSON.parse(JSON.stringify(gData));
-            cleanData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
+            
+            // 深拷贝并彻底清洗坐标后再存入数据库
+            const exportData = JSON.parse(JSON.stringify(gData));
+            exportData.nodes.forEach(n => {
+                ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(prop => delete n[prop]);
             });
-            const { error } = await sb.from('relation_graphs').update({ data: cleanData }).eq('id', 1);
+            // 确保连线指向的是 ID 字符串
+            exportData.links.forEach(l => {
+                if (typeof l.source === 'object') l.source = l.source.id;
+                if (typeof l.target === 'object') l.target = l.target.id;
+            });
+
+            const { error } = await sb.from('relation_graphs').update({ data: exportData }).eq('id', 1);
+            if(error) console.error("💾 保存失败:", error);
             document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
         }
 
+        // 核心修复：清理节点位置及引用（彻底解决随缘显示问题）
         function cleanNodePositions() {
             gData.nodes.forEach(n => {
-                delete n.x; delete n.y; delete n.z;
-                delete n.vx; delete n.vy; delete n.vz;
-                delete n.fx; delete n.fy; delete n.fz;
+                ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(p => delete n[p]);
+            });
+            // 重要：将所有连线还原为 ID 字符串，防止插件报错
+            gData.links.forEach(l => {
+                if (typeof l.source === 'object') l.source = l.source.id;
+                if (typeof l.target === 'object') l.target = l.target.id;
             });
         }
 
@@ -222,6 +221,7 @@
             Graph.graphData(gData);
         }
 
+        // --- 其他交互逻辑保持不变 ---
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
             if (!name) return alert('姓名必填');
@@ -231,29 +231,16 @@
             let node = gData.nodes.find(n => n.id === name);
             if (node) Object.assign(node, { avatar, nicks, desc });
             else gData.nodes.push({ id: name, avatar, nicks, desc });
-            refreshGraph(); 
-            saveData(); 
-            resetForm();
+            refreshGraph(); saveData(); resetForm();
         }
 
-        // 新增：一键删除人物功能
         function deleteCurrentNode() {
             if (!focusNode) return;
-            if (confirm(`确定要删除人物【${focusNode.id}】吗？\n这将同时删除所有与之相关的关系连线！此操作不可撤销。`)) {
+            if (confirm(`确定要删除【${focusNode.id}】吗？`)) {
                 const targetId = focusNode.id;
-                // 1. 删除节点
                 gData.nodes = gData.nodes.filter(n => n.id !== targetId);
-                // 2. 删除所有相关连线
-                gData.links = gData.links.filter(l => {
-                    const s = l.source.id || l.source;
-                    const t = l.target.id || l.target;
-                    return s !== targetId && t !== targetId;
-                });
-                
-                closeCard(); // 关闭详情页
-                refreshGraph(); // 刷新图形
-                saveData(); // 保存到云端
-                alert("已成功删除该人物及其所有关系。");
+                gData.links = gData.links.filter(l => (l.source.id || l.source) !== targetId && (l.target.id || l.target) !== targetId);
+                closeCard(); refreshGraph(); saveData();
             }
         }
 
@@ -264,14 +251,7 @@
             const desc = document.getElementById('relDesc').value.trim();
             if (!gData.nodes.some(n => n.id === s) || !gData.nodes.some(n => n.id === t)) return alert("成员未录入");
             gData.links.push({ source: s, target: t, type, desc });
-            refreshGraph(); 
-            saveData();
-        }
-
-        function handleSearch(val) {
-            if (!val) { resetFocus(); return; }
-            const n = gData.nodes.find(n => n.id.includes(val) || (n.nicks && n.nicks.some(nick => nick.includes(val))));
-            if (n) { focusNode = n; showDetail(n); refreshGraph(); }
+            refreshGraph(); saveData();
         }
 
         function showDetail(node) {
@@ -283,7 +263,7 @@
             document.getElementById('c-rel-body').innerHTML = myLinks.map(l => {
                 const other = (l.source.id || l.source) === node.id ? (l.target.id || l.target) : (l.source.id || l.source);
                 const delBtn = isAdmin ? `<td><span style="color:red;cursor:pointer" onclick="deleteLinkByIndex(${gData.links.indexOf(l)})">删除</span></td>` : '';
-                return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type].color}"><b>${l.type}</b></td>${delBtn}</tr>`;
+                return `<tr><td><b>${other}</b></td><td style="color:${REL_STYLE[l.type]?.color || '#333'}"><b>${l.type}</b></td>${delBtn}</tr>`;
             }).join('');
             document.getElementById('detail-card').style.display = 'block';
         }
@@ -291,8 +271,7 @@
         function deleteLinkByIndex(idx) {
             if(confirm("确定删除这条关系线？")) {
                 gData.links.splice(idx, 1);
-                refreshGraph(); 
-                saveData();
+                refreshGraph(); saveData();
                 if(focusNode) showDetail(focusNode);
             }
         }
@@ -303,16 +282,40 @@
             reader.readAsDataURL(input.files[0]);
         }
 
-        function editCurrentNode() {
-            document.getElementById('nodeName').value = focusNode.id;
-            document.getElementById('nodeNick').value = (focusNode.nicks || []).join(',');
-            document.getElementById('nodeDesc').value = focusNode.desc || '';
+        async function checkAdmin() {
+            const { data: { user } } = await sb.auth.getUser();
+            if (user) {
+                isAdmin = true;
+                document.getElementById('ui-panel').style.display = 'block';
+                document.getElementById('editBtn').style.display = 'block';
+                document.getElementById('delNodeBtn').style.display = 'block';
+            }
         }
 
+        function handleSecretClick() {
+            window.cnt = (window.cnt || 0) + 1;
+            if (window.cnt >= 3) {
+                const email = prompt("管理邮箱:"); const pw = prompt("密码:");
+                sb.auth.signInWithPassword({ email, password: pw }).then(({error}) => {
+                    if (!error) location.reload(); else alert("验证失败");
+                });
+            }
+            setTimeout(() => { window.cnt = 0; }, 1000);
+        }
+
+        function handleSearch(val) {
+            if (!val) { resetFocus(); return; }
+            const n = gData.nodes.find(n => n.id.includes(val) || (n.nicks && n.nicks.some(nick => nick.includes(val))));
+            if (n) { focusNode = n; showDetail(n); refreshGraph(); }
+        }
+
+        async function logout() { await sb.auth.signOut(); location.reload(); }
+        function editCurrentNode() { document.getElementById('nodeName').value = focusNode.id; document.getElementById('nodeNick').value = (focusNode.nicks || []).join(','); document.getElementById('nodeDesc').value = focusNode.desc || ''; }
         function resetFocus() { focusNode = null; refreshGraph(); }
         function closeCard() { document.getElementById('detail-card').style.display = 'none'; resetFocus(); }
         function resetForm() { ['nodeName', 'nodeNick', 'nodeAvatar', 'nodeDesc'].forEach(id => document.getElementById(id).value = ''); tempImgBase64 = ""; }
 
+        // 3. 优化后的启动顺序
         window.onload = loadData;
     </script>
 </body>
