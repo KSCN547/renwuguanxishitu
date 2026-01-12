@@ -69,7 +69,6 @@
         </div>
         <div style="margin-top:15px;">
             <button id="editBtn" onclick="editCurrentNode()" style="background:#f0f0f0; color:#444; border:1px solid #ccc; display:none">修改资料</button>
-            <button id="delNodeBtn" onclick="deleteCurrentNode()" style="background:#dc3545; color:white; display:none; margin-top:5px">⚠️ 删除此人及其关系</button>
             <button onclick="resetFocus()" style="background:var(--success); margin-top:5px">恢复完整视图</button>
             <button onclick="closeCard()" style="background:#eee; color:#666; margin-top:5px">关闭</button>
         </div>
@@ -88,6 +87,7 @@
         let tempImgBase64 = "";
         let isAdmin = false;
 
+        // 使用加深的色值，0.8 粗细
         const REL_STYLE = {
             'cp': { color: '#880044', width: 0.8 },
             '好友': { color: '#004400', width: 0.8 },
@@ -131,11 +131,11 @@
                 return siblings.length <= 1 ? 0 : (siblings.indexOf(link) - (siblings.length - 1) / 2) * 0.25;
             })
             .linkColor(link => REL_STYLE[link.type]?.color || '#333')
-            .linkWidth(0.8)
-            .linkMaterial(link => new THREE.MeshLambertMaterial({ 
-                color: REL_STYLE[link.type]?.color || '#333', 
-                transparent: false, 
-                opacity: 1 
+            .linkWidth(0.8) // 固定线宽
+            .linkMaterial(link => new THREE.MeshLambertMaterial({
+                color: REL_STYLE[link.type]?.color || '#333',
+                transparent: false,
+                opacity: 1
             }))
             .nodeVisibility(node => {
                 if (!focusNode) return true;
@@ -181,7 +181,6 @@
                 isAdmin = true;
                 document.getElementById('ui-panel').style.display = 'block';
                 document.getElementById('editBtn').style.display = 'block';
-                document.getElementById('delNodeBtn').style.display = 'block'; // 管理员显示删除按钮
             }
         }
 
@@ -231,30 +230,9 @@
             let node = gData.nodes.find(n => n.id === name);
             if (node) Object.assign(node, { avatar, nicks, desc });
             else gData.nodes.push({ id: name, avatar, nicks, desc });
-            refreshGraph(); 
-            saveData(); 
+            refreshGraph();
+            saveData();
             resetForm();
-        }
-
-        // 新增：一键删除人物功能
-        function deleteCurrentNode() {
-            if (!focusNode) return;
-            if (confirm(`确定要删除人物【${focusNode.id}】吗？\n这将同时删除所有与之相关的关系连线！此操作不可撤销。`)) {
-                const targetId = focusNode.id;
-                // 1. 删除节点
-                gData.nodes = gData.nodes.filter(n => n.id !== targetId);
-                // 2. 删除所有相关连线
-                gData.links = gData.links.filter(l => {
-                    const s = l.source.id || l.source;
-                    const t = l.target.id || l.target;
-                    return s !== targetId && t !== targetId;
-                });
-                
-                closeCard(); // 关闭详情页
-                refreshGraph(); // 刷新图形
-                saveData(); // 保存到云端
-                alert("已成功删除该人物及其所有关系。");
-            }
         }
 
         function addLink() {
@@ -264,7 +242,7 @@
             const desc = document.getElementById('relDesc').value.trim();
             if (!gData.nodes.some(n => n.id === s) || !gData.nodes.some(n => n.id === t)) return alert("成员未录入");
             gData.links.push({ source: s, target: t, type, desc });
-            refreshGraph(); 
+            refreshGraph();
             saveData();
         }
 
@@ -289,9 +267,9 @@
         }
 
         function deleteLinkByIndex(idx) {
-            if(confirm("确定删除这条关系线？")) {
+            if(confirm("确定删除？")) {
                 gData.links.splice(idx, 1);
-                refreshGraph(); 
+                refreshGraph();
                 saveData();
                 if(focusNode) showDetail(focusNode);
             }
