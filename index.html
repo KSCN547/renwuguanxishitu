@@ -2,30 +2,27 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>3D人物关系档案 - 纯净版</title>
-    
+    <title>3D人物关系档案 - 最终修复版</title>
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-    
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
-
     <style>
         :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; }
         body { margin: 0; background: #e3f2fd; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
         .ui-overlay { position: absolute; z-index: 99; pointer-events: auto; }
-        #loading-screen { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: white; display: flex; align-items: center; justify-content: center; z-index: 10000; font-weight: bold; color: var(--primary); }
         #ui-panel { top: 15px; left: 15px; background: rgba(255,255,255,0.95); padding: 15px; border-radius: 12px; width: 240px; box-shadow: 0 4px 15px rgba(0,0,0,0.1); max-height: 90vh; overflow-y: auto; display: none; }
         #detail-card { top: 70px; right: 15px; background: white; padding: 20px; border-radius: 12px; width: 300px; display: none; box-shadow: 0 10px 30px rgba(0,0,0,0.15); border-left: 8px solid var(--primary); }
         .search-box { top: 15px; right: 15px; width: 280px; }
         .search-box input { width: 100%; padding: 12px 18px; border-radius: 25px; border: 2px solid var(--primary); outline: none; }
         input, select, textarea { width: 100%; margin: 5px 0; padding: 10px; border: 1px solid #ddd; border-radius: 8px; box-sizing: border-box; }
         button { width: 100%; padding: 10px; cursor: pointer; border: none; border-radius: 8px; font-weight: bold; margin-top: 5px; background: var(--primary); color: white; }
+        .tag { background: #e7f3ff; color: #007bff; padding: 3px 8px; border-radius: 5px; font-size: 11px; margin: 2px; display: inline-block; }
+        .rel-table { width: 100%; font-size: 12px; margin-top: 10px; border-collapse: collapse; }
+        .rel-table td { border-bottom: 1px solid #eee; padding: 8px 2px; }
         #sync-text { font-size: 11px; color: #666; text-align: center; margin: 5px 0; }
     </style>
 </head>
 <body>
-
-    <div id="loading-screen">⚙️ 正在连接 3D 渲染环境...</div>
 
     <div class="ui-overlay search-box">
         <input type="text" placeholder="🔍 搜索姓名/外号..." oninput="handleSearch(this.value)" onclick="handleSecretClick()">
@@ -34,10 +31,10 @@
     <div id="ui-panel" class="ui-overlay">
         <h4 style="margin:0">👤 资料录入</h4>
         <input type="text" id="nodeName" placeholder="姓名">
-        <input type="text" id="nodeNick" placeholder="外号">
+        <input type="text" id="nodeNick" placeholder="外号 (逗号隔开)">
         <input type="text" id="nodeAvatar" placeholder="头像 URL">
         <textarea id="nodeDesc" placeholder="简介..." rows="2"></textarea>
-        <button onclick="addNode()">保存</button>
+        <button onclick="addNode()">保存人物</button>
         <hr style="opacity:0.1">
         <h4 style="margin:0">🔗 建立关系</h4>
         <input type="text" id="source" placeholder="甲方姓名">
@@ -48,16 +45,18 @@
             <option value="仇人">仇人</option>
         </select>
         <button style="background:var(--success)" onclick="addLink()">确认连接</button>
-        <div id="sync-text">📡 数据库状态: 待命</div>
-        <button onclick="logout()" style="background:#6c757d; font-size:10px">退出登录</button>
+        <div id="sync-text">📡 云端同步就绪</div>
+        <button onclick="logout()" style="background:#6c757d; font-size:10px">退出管理</button>
     </div>
 
     <div id="detail-card" class="ui-overlay">
         <div style="text-align:center">
             <img id="c-avatar" style="width:70px;height:70px;border-radius:50%;object-fit:cover;border:2px solid var(--primary)">
             <h3 id="c-name" style="margin:8px 0"></h3>
+            <div id="c-nicks"></div>
         </div>
         <p id="c-desc" style="font-size:13px; color:#555;"></p>
+        <table class="rel-table"><tbody id="c-rel-body"></tbody></table>
         <div style="margin-top:15px">
             <button id="delBtn" style="background:var(--danger); display:none" onclick="deleteNode()">⚠️ 删除此人</button>
             <button onclick="closeCard()" style="background:#eee; color:#666">关闭</button>
@@ -67,7 +66,6 @@
     <div id="3d-graph"></div>
 
     <script>
-        // Supabase 配置
         const SB_URL = 'https://qemyaqsxlkxpxvmlzhli.supabase.co';
         const SB_KEY = 'sb_publishable_QB7wPNVsq0olx3opmZXDzA_83yJm1qD';
         const sb = supabase.createClient(SB_URL, SB_KEY);
@@ -75,25 +73,18 @@
         let gData = { nodes: [], links: [] }, focusNode = null, isAdmin = false;
         const REL_STYLE = { 'cp': '#B3005F', '好友': '#006400', '仇人': '#800000' };
 
-        // 【核心修改点 2】初始化 Graph，直接使用全局 THREE
-        const Graph = ForceGraph3D()(document.getElementById('3d-graph'));
-
-        Graph.backgroundColor('#f0f8ff')
+        const Graph = ForceGraph3D()(document.getElementById('3d-graph'))
+            .backgroundColor('#f0f8ff')
             .nodeThreeObject(node => {
-                // 因为顶部引入了 three.min.js，此处 THREE 绝对是全局可用的
                 const isFocus = focusNode && node.id === focusNode.id;
                 const group = new THREE.Group();
                 const size = isFocus ? 11 : 7;
                 
                 const img = node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`;
                 const texture = new THREE.TextureLoader().load(img);
-                const sphere = new THREE.Mesh(
-                    new THREE.SphereGeometry(size, 32, 32), 
-                    new THREE.MeshLambertMaterial({ map: texture })
-                );
+                const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
                 group.add(sphere);
 
-                // 绘制文字标签
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 canvas.width = 120; canvas.height = 40;
@@ -108,79 +99,73 @@
                 return group;
             })
             .linkColor(l => REL_STYLE[l.type] || '#666')
+            .linkWidth(1.5)
             .onNodeClick(node => { focusNode = node; showDetail(node); Graph.refresh(); });
 
-        // 数据清洗函数：防止球线分离
+        // 核心修复函数：清洗数据，确保球线不分离
         function cleanData(rawData) {
             const data = JSON.parse(JSON.stringify(rawData));
             data.nodes.forEach(n => {
-                ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(p => delete n[p]);
+                // 彻底删除所有位置和物理属性，强制重新计算
+                delete n.x; delete n.y; delete n.z;
+                delete n.vx; delete n.vy; delete n.vz;
+                delete n.fx; delete n.fy; delete n.fz;
             });
             data.links.forEach(l => {
+                // 确保 source 和 target 只是字符串 ID，不是对象
                 if (typeof l.source === 'object') l.source = l.source.id;
                 if (typeof l.target === 'object') l.target = l.target.id;
             });
             return data;
         }
 
-        // 初始化加载
-        async function init() {
-            try {
-                const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
-                if (!error && data) {
-                    gData = cleanData(data.data);
-                    // 确保渲染上下文稳定后注入数据
-                    setTimeout(() => {
-                        Graph.graphData(gData);
-                        document.getElementById('loading-screen').style.display = 'none';
-                    }, 300);
-                }
-                
-                // 检查权限
-                const { data: { user } } = await sb.auth.getUser();
-                if (user) {
-                    isAdmin = true;
-                    document.getElementById('ui-panel').style.display = 'block';
-                    document.getElementById('delBtn').style.display = 'block';
-                }
-            } catch (err) {
-                console.error("加载失败", err);
+        async function loadData() {
+            const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
+            if (!error && data) {
+                gData = cleanData(data.data);
+                Graph.graphData(gData);
+                document.getElementById('sync-text').innerText = "✅ 同步成功";
             }
+            checkAdmin();
         }
 
-        // 交互功能
         async function saveData() {
             if (!isAdmin) return;
-            document.getElementById('sync-text').innerText = "⏳ 正在保存...";
-            const dataToSave = cleanData(gData);
+            document.getElementById('sync-text').innerText = "⏳ 正在同步...";
+            const dataToSave = cleanData(gData); // 保存前再次清洗
             const { error } = await sb.from('relation_graphs').update({ data: dataToSave }).eq('id', 1);
-            document.getElementById('sync-text').innerText = error ? "❌ 错误" : "✅ 已同步";
+            document.getElementById('sync-text').innerText = error ? "❌ 同步失败" : "✅ 已同步云端";
+        }
+
+        async function checkAdmin() {
+            const { data: { user } } = await sb.auth.getUser();
+            if (user) { isAdmin = true; document.getElementById('ui-panel').style.display = 'block'; }
         }
 
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
-            if (!name) return alert("请输入姓名");
+            if (!name) return alert("姓名必填");
             const info = {
                 id: name,
                 avatar: document.getElementById('nodeAvatar').value,
                 nicks: document.getElementById('nodeNick').value.split(/[,，]/).filter(t => t),
                 desc: document.getElementById('nodeDesc').value
             };
-            const idx = gData.nodes.findIndex(n => n.id === name);
-            if (idx > -1) gData.nodes[idx] = info; else gData.nodes.push(info);
+            const index = gData.nodes.findIndex(n => n.id === name);
+            if (index > -1) gData.nodes[index] = info; else gData.nodes.push(info);
             Graph.graphData(cleanData(gData)); saveData();
         }
 
         function addLink() {
             const s = document.getElementById('source').value.trim();
             const t = document.getElementById('target').value.trim();
-            if (!s || !t) return;
+            if (!s || !t) return alert("姓名必填");
             gData.links.push({ source: s, target: t, type: document.getElementById('relType').value });
             Graph.graphData(cleanData(gData)); saveData();
         }
 
         function deleteNode() {
-            if (!focusNode || !confirm(`确认删除 ${focusNode.id}？`)) return;
+            if (!focusNode || !confirm(`确定彻底删除 ${focusNode.id}？`)) return;
             const id = focusNode.id;
             gData.nodes = gData.nodes.filter(n => n.id !== id);
             gData.links = gData.links.filter(l => (l.source.id || l.source) !== id && (l.target.id || l.target) !== id);
@@ -190,19 +175,20 @@
         function showDetail(node) {
             document.getElementById('c-name').innerText = node.id;
             document.getElementById('c-avatar').src = node.avatar || '';
-            document.getElementById('c-desc').innerText = node.desc || '暂无详细背景。';
+            document.getElementById('c-desc').innerText = node.desc || '';
+            document.getElementById('delBtn').style.display = isAdmin ? 'block' : 'none';
             document.getElementById('detail-card').style.display = 'block';
         }
 
+        let clickCount = 0;
         function handleSecretClick() {
-            window.c = (window.c || 0) + 1;
-            if (window.c >= 3) {
+            clickCount++; if (clickCount >= 3) {
                 const email = prompt("管理邮箱:"); const pw = prompt("密码:");
                 sb.auth.signInWithPassword({ email, password: pw }).then(({ error }) => {
-                    if (!error) location.reload(); else alert("验证失败");
+                    if (!error) location.reload(); else alert("认证失败");
                 });
             }
-            setTimeout(() => window.c = 0, 1000);
+            setTimeout(() => clickCount = 0, 1000);
         }
 
         async function logout() { await sb.auth.signOut(); location.reload(); }
@@ -212,7 +198,7 @@
             if (n) { focusNode = n; showDetail(n); Graph.refresh(); }
         }
 
-        window.onload = init;
+        window.onload = loadData;
     </script>
 </body>
 </html>
