@@ -2,10 +2,13 @@
 <html lang="zh-CN">
 <head>
     <meta charset="UTF-8">
-    <title>3D人物关系档案 - 高稳定性版</title>
+    <title>3D人物关系档案 - 纯净版</title>
+    
     <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+    
     <script src="https://unpkg.com/3d-force-graph@1.73.2/dist/3d-force-graph.min.js"></script>
     <script src="https://unpkg.com/@supabase/supabase-js@2"></script>
+
     <style>
         :root { --primary: #007bff; --success: #28a745; --danger: #dc3545; }
         body { margin: 0; background: #e3f2fd; font-family: "Microsoft YaHei", sans-serif; overflow: hidden; }
@@ -22,7 +25,7 @@
 </head>
 <body>
 
-    <div id="loading-screen">🚀 正在启动 3D 渲染引擎，请稍候...</div>
+    <div id="loading-screen">⚙️ 正在连接 3D 渲染环境...</div>
 
     <div class="ui-overlay search-box">
         <input type="text" placeholder="🔍 搜索姓名/外号..." oninput="handleSearch(this.value)" onclick="handleSecretClick()">
@@ -31,10 +34,10 @@
     <div id="ui-panel" class="ui-overlay">
         <h4 style="margin:0">👤 资料录入</h4>
         <input type="text" id="nodeName" placeholder="姓名">
-        <input type="text" id="nodeNick" placeholder="外号 (逗号隔开)">
+        <input type="text" id="nodeNick" placeholder="外号">
         <input type="text" id="nodeAvatar" placeholder="头像 URL">
         <textarea id="nodeDesc" placeholder="简介..." rows="2"></textarea>
-        <button onclick="addNode()">保存人物</button>
+        <button onclick="addNode()">保存</button>
         <hr style="opacity:0.1">
         <h4 style="margin:0">🔗 建立关系</h4>
         <input type="text" id="source" placeholder="甲方姓名">
@@ -45,8 +48,8 @@
             <option value="仇人">仇人</option>
         </select>
         <button style="background:var(--success)" onclick="addLink()">确认连接</button>
-        <div id="sync-text">📡 状态: 就绪</div>
-        <button onclick="logout()" style="background:#6c757d; font-size:10px">退出管理</button>
+        <div id="sync-text">📡 数据库状态: 待命</div>
+        <button onclick="logout()" style="background:#6c757d; font-size:10px">退出登录</button>
     </div>
 
     <div id="detail-card" class="ui-overlay">
@@ -64,6 +67,7 @@
     <div id="3d-graph"></div>
 
     <script>
+        // Supabase 配置
         const SB_URL = 'https://qemyaqsxlkxpxvmlzhli.supabase.co';
         const SB_KEY = 'sb_publishable_QB7wPNVsq0olx3opmZXDzA_83yJm1qD';
         const sb = supabase.createClient(SB_URL, SB_KEY);
@@ -71,22 +75,25 @@
         let gData = { nodes: [], links: [] }, focusNode = null, isAdmin = false;
         const REL_STYLE = { 'cp': '#B3005F', '好友': '#006400', '仇人': '#800000' };
 
-        // 1. 先初始化一个空的 Graph 对象
+        // 【核心修改点 2】初始化 Graph，直接使用全局 THREE
         const Graph = ForceGraph3D()(document.getElementById('3d-graph'));
 
-        // 2. 配置 Graph 渲染参数（此时不注入数据）
         Graph.backgroundColor('#f0f8ff')
             .nodeThreeObject(node => {
-                // 此时 THREE 已经从 cdn 加载，绝对不会报错
-                const group = new THREE.Group();
+                // 因为顶部引入了 three.min.js，此处 THREE 绝对是全局可用的
                 const isFocus = focusNode && node.id === focusNode.id;
+                const group = new THREE.Group();
                 const size = isFocus ? 11 : 7;
                 
                 const img = node.avatar || `https://api.dicebear.com/7.x/initials/svg?seed=${node.id}`;
                 const texture = new THREE.TextureLoader().load(img);
-                const sphere = new THREE.Mesh(new THREE.SphereGeometry(size, 32, 32), new THREE.MeshLambertMaterial({ map: texture }));
+                const sphere = new THREE.Mesh(
+                    new THREE.SphereGeometry(size, 32, 32), 
+                    new THREE.MeshLambertMaterial({ map: texture })
+                );
                 group.add(sphere);
 
+                // 绘制文字标签
                 const canvas = document.createElement('canvas');
                 const ctx = canvas.getContext('2d');
                 canvas.width = 120; canvas.height = 40;
@@ -101,14 +108,13 @@
                 return group;
             })
             .linkColor(l => REL_STYLE[l.type] || '#666')
-            .linkWidth(1.5)
             .onNodeClick(node => { focusNode = node; showDetail(node); Graph.refresh(); });
 
-        // 3. 数据清洗函数（解决球线分离核心）
+        // 数据清洗函数：防止球线分离
         function cleanData(rawData) {
             const data = JSON.parse(JSON.stringify(rawData));
             data.nodes.forEach(n => {
-                ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(prop => delete n[prop]);
+                ['x','y','z','vx','vy','vz','fx','fy','fz'].forEach(p => delete n[p]);
             });
             data.links.forEach(l => {
                 if (typeof l.source === 'object') l.source = l.source.id;
@@ -117,20 +123,17 @@
             return data;
         }
 
-        // 4. 等待引擎和数据全部准备就绪
-        async function startApp() {
+        // 初始化加载
+        async function init() {
             try {
-                // 加载数据
                 const { data, error } = await sb.from('relation_graphs').select('data').eq('id', 1).single();
-                
                 if (!error && data) {
                     gData = cleanData(data.data);
-                    // 延迟 500ms 确保浏览器渲染上下文完全就绪
+                    // 确保渲染上下文稳定后注入数据
                     setTimeout(() => {
                         Graph.graphData(gData);
                         document.getElementById('loading-screen').style.display = 'none';
-                        console.log("引擎初始化完成，数据已注入");
-                    }, 500);
+                    }, 300);
                 }
                 
                 // 检查权限
@@ -140,23 +143,23 @@
                     document.getElementById('ui-panel').style.display = 'block';
                     document.getElementById('delBtn').style.display = 'block';
                 }
-            } catch (e) {
-                console.error("启动失败", e);
+            } catch (err) {
+                console.error("加载失败", err);
             }
         }
 
-        // 管理员功能
+        // 交互功能
         async function saveData() {
             if (!isAdmin) return;
-            document.getElementById('sync-text').innerText = "⏳ 正在同步...";
+            document.getElementById('sync-text').innerText = "⏳ 正在保存...";
             const dataToSave = cleanData(gData);
             const { error } = await sb.from('relation_graphs').update({ data: dataToSave }).eq('id', 1);
-            document.getElementById('sync-text').innerText = error ? "❌ 失败" : "✅ 已同步";
+            document.getElementById('sync-text').innerText = error ? "❌ 错误" : "✅ 已同步";
         }
 
         function addNode() {
             const name = document.getElementById('nodeName').value.trim();
-            if (!name) return;
+            if (!name) return alert("请输入姓名");
             const info = {
                 id: name,
                 avatar: document.getElementById('nodeAvatar').value,
@@ -187,19 +190,19 @@
         function showDetail(node) {
             document.getElementById('c-name').innerText = node.id;
             document.getElementById('c-avatar').src = node.avatar || '';
-            document.getElementById('c-desc').innerText = node.desc || '无资料';
+            document.getElementById('c-desc').innerText = node.desc || '暂无详细背景。';
             document.getElementById('detail-card').style.display = 'block';
         }
 
         function handleSecretClick() {
-            window.clickCount = (window.clickCount || 0) + 1;
-            if (window.clickCount >= 3) {
+            window.c = (window.c || 0) + 1;
+            if (window.c >= 3) {
                 const email = prompt("管理邮箱:"); const pw = prompt("密码:");
                 sb.auth.signInWithPassword({ email, password: pw }).then(({ error }) => {
-                    if (!error) location.reload();
+                    if (!error) location.reload(); else alert("验证失败");
                 });
             }
-            setTimeout(() => window.clickCount = 0, 1000);
+            setTimeout(() => window.c = 0, 1000);
         }
 
         async function logout() { await sb.auth.signOut(); location.reload(); }
@@ -209,8 +212,7 @@
             if (n) { focusNode = n; showDetail(n); Graph.refresh(); }
         }
 
-        // 启动流程
-        window.onload = startApp;
+        window.onload = init;
     </script>
 </body>
 </html>
